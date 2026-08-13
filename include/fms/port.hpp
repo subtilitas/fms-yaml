@@ -12,6 +12,7 @@
 // only file you need to look at:
 //
 //   class MyPort final : public fms::IPort {
+//     fms::Status configure(const fms::IoConfig& io) noexcept override { ... }  // optional
 //     fms::Status open() noexcept override            { ... }
 //     fms::Status listen(fms::StringView ch) noexcept override  { ... }  // optional
 //     fms::Status receive(fms::StringView& ch, uint32_t ms) noexcept override { ... }
@@ -30,6 +31,7 @@
 
 #include <cstdint>
 
+#include "fms/io_config.hpp"
 #include "fms/status.hpp"
 #include "fms/types.hpp"
 
@@ -39,7 +41,13 @@ class IPort {
  public:
   virtual ~IPort() = default;
 
-  /// Opens the connection, device or file.  Called once by Runtime::start().
+  /// Hands over the `io` block of the setup file - endpoint, identity and the
+  /// two channels the machine talks on - before anything is opened.  Called
+  /// once by Runtime::start().  A port that needs none of it can ignore this.
+  virtual Status configure(const IoConfig& /*io*/) noexcept { return Status::Ok; }
+
+  /// Opens the connection, device or file.  Called once by Runtime::start(),
+  /// after configure().
   virtual Status open() noexcept { return Status::Ok; }
 
   /// Closes it again.  Called by Runtime::stop().

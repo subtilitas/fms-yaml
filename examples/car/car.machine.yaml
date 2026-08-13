@@ -1,4 +1,5 @@
-# Car state machine.
+# Machine: what the car does.  Triggers and states, nothing else - no
+# endpoints, no starting state, nothing about where this is deployed.
 #
 #   power_off --ignition_on--> self_test --passed--> standing
 #   standing  --throttle_pressed--> accelerating --throttle_released--> coasting
@@ -12,14 +13,7 @@
 # would add e.g. `channel: "car/brakes/pressed"` to each trigger.
 
 fsm:
-  name: car
-  initial: power_off
-
-io:
-  state_channel: "car/state"   # where the machine announces its state
-  error_channel: "car/error"   # where it reports refused triggers
-  # endpoint / identity are opaque strings for whatever port you plug in;
-  # the console port ignores them.
+  name: car          # the definition, not the instance - that is in the setup
 
 triggers:
   # ignition switch

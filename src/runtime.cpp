@@ -10,11 +10,15 @@ StringView cstr(const char* text) noexcept { return StringView(text, std::strlen
 
 }  // namespace
 
-Status Runtime::init(const Model& model, StateMachine& machine, IPort& port) noexcept {
+Status Runtime::init(StateMachine& machine, IPort& port) noexcept {
   if (started_) {
     return Status::AlreadyInitialised;
   }
-  model_   = &model;
+  if (machine.model() == nullptr || machine.setup() == nullptr) {
+    return Status::NotInitialised;  // call StateMachine::init first
+  }
+  model_   = machine.model();
+  setup_   = machine.setup();
   machine_ = &machine;
   port_    = &port;
   return Status::Ok;
@@ -26,11 +30,17 @@ void Runtime::set_trace(TraceFn trace, void* user) noexcept {
 }
 
 Status Runtime::start() noexcept {
-  if (model_ == nullptr || machine_ == nullptr || port_ == nullptr) {
+  if (model_ == nullptr || setup_ == nullptr || machine_ == nullptr || port_ == nullptr) {
     return Status::NotInitialised;
   }
   if (started_) {
     return Status::AlreadyInitialised;
+  }
+
+  // The setup half of the config reaches the port here, and only here.
+  const Status configured = port_->configure(setup_->io());
+  if (!is_ok(configured)) {
+    return configured;
   }
 
   const Status opened = port_->open();

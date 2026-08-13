@@ -1,20 +1,53 @@
 # Architecture notes
 
+## Two files, two objects
+
+```
+car.setup.yaml     fsm (name, initial) + io   -->  fms::Setup    where it runs
+car.machine.yaml   triggers + states          -->  fms::Model    what it does
+                                                        |
+                          StateMachine::init(model, setup)
+                                                        |
+                                         the one cross-file check:
+                                    does the machine have that initial state?
+```
+
+The two files are loaded by separate entry points and know nothing about each
+other. Each loader rejects the other's sections rather than ignoring them, so a
+`states:` block that drifted into the setup file is reported with the name of the
+file it belongs in, not silently dropped.
+
+Why bother: the machine file is behaviour, and reviewing behaviour is easier
+when no endpoint or client id is mixed into it. The setup file is deployment, and
+swapping it lets the same machine run on a bench, in a test, or in a car —
+including starting in a different state, which is how you resume after a reset or
+drop a test straight into the situation it cares about.
+
+`Setup::initial_name()` is deliberately a *name*, not an id: a file loaded on its
+own cannot resolve it. `StateMachine::init` resolves it once and fails there if
+the state does not exist, so a mismatched pair is caught at start-up rather than
+on the first trigger.
+
 ## The two phases
 
 ```
                 setup phase                     |            run phase
   (allocation allowed, happens once)            |   (no allocation, no exceptions)
 -------------------------------------------------------------------------------------
-  config::load_file --> yaml-cpp heap document  |   port.receive()
-                    --> copied into Model       |     -> Model::find_trigger_for_channel()
-                    --> document destroyed      |       -> StateMachine::fire()
-  StateMachine::init                            |         -> port.publish_state(), or
-  Runtime::init / start (open, listen)          |            port.publish_error()
+  load_setup_file   --> yaml-cpp heap document  |   port.receive()
+  load_machine_file --> copied into Setup/Model |     -> Model::find_trigger_for_channel()
+                    --> documents destroyed     |       -> StateMachine::fire()
+  StateMachine::init(model, setup)              |         -> port.publish_state(), or
+  Runtime::init / start                         |            port.publish_error()
+    (configure, open, listen)                   |
 ```
 
 The boundary is `Runtime::start()`. Everything the run phase touches was sized at
 compile time from `fms/limits.hpp` and filled during setup.
+
+`Runtime::init` takes the machine and the port, not four separate objects: the
+model and the setup come from the machine that already bound them, so there is no
+way to hand the runtime a mismatched pair.
 
 ## The engine
 
@@ -92,10 +125,11 @@ input and blocks only there. No threads, no callbacks, no queues, no clock.
 
 ## Writing a port
 
-Six methods, four of which have usable defaults:
+Seven methods, five of which have usable defaults:
 
 | Method | Called | Must do |
 |---|---|---|
+| `configure(io)` | once, from `start()`, before `open()` | keep what you need from the setup file's `io` block |
 | `open()` | once, from `start()` | connect / open the device |
 | `listen(channel)` | once per trigger, from `start()` | subscribe, or ignore it |
 | `receive(channel, timeout_ms)` | every `service()` | block up to the timeout; set `channel` |
@@ -114,8 +148,9 @@ Rules:
   when the source is exhausted (`Runtime::service()` passes it up so the caller
   can leave the loop).
 
-`io.endpoint` and `io.identity` from the config are there for you: a broker URI,
-a serial device, a client id. The core never looks at them.
+`io.endpoint` and `io.identity` from the setup file are there for you: a broker
+URI, a serial device, a client id. The core never looks at them — it only carries
+them from the file to `configure()`.
 
 `ConsolePort` is the worked example, at about 100 lines
 (`src/port/console_port.cpp`). It reads with `std::cin.getline` into a fixed
@@ -147,15 +182,16 @@ x86-64:
 
 | Type | Size |
 |---|---|
-| `fms::Model` | 27 112 B |
+| `fms::Model` | 26 656 B |
+| `fms::Setup` | 576 B |
 | `fms::StateNode` | 288 B |
-| `fms::StateMachine` | 24 B |
-| `fms::Runtime` | 216 B |
+| `fms::StateMachine` | 32 B |
+| `fms::Runtime` | 224 B |
 
 Tuned to the car config (`-DFMS_MAX_STATES=8 -DFMS_MAX_TRIGGERS=12
 -DFMS_MAX_TRANSITIONS_PER_STATE=5 -DFMS_MAX_CHANNEL_LENGTH=31`), `fms::Model`
-drops to 7 144 B. Set the macros to what the config actually needs rather than
-leaving the defaults.
+drops to 6 880 B and `fms::Setup` to 384 B. Set the macros to what the config
+actually needs rather than leaving the defaults.
 
 Verifying the two hard constraints on the built artefacts:
 
@@ -170,8 +206,9 @@ nm -C libfms_config.a | grep -cE '__cxa_throw|_Unwind_Resume'    # non-zero: the
 | Suite | Covers |
 |---|---|
 | `test_state_machine.cpp` | accept, reject, capacity, duplicates, dangling references |
-| `test_loader.cpp` | every schema and reference error, malformed YAML, oversized names |
-| `test_runtime.cpp` | channel routing, error feedback, trace hook, end of input |
+| `test_setup.cpp` | the two-file split: binding, swapping setups, sections in the wrong file, a setup that does not fit its machine |
+| `test_loader.cpp` | every machine-file schema and reference error, malformed YAML, oversized names |
+| `test_runtime.cpp` | channel routing, error feedback, `configure()` before `open()`, trace hook, end of input |
 | `test_no_alloc.cpp` | the heap trap |
 | `car_console_pipe` (ctest) | the example driven by a scripted session on stdin, stdout compared with `tests/car_session.expected` |
 

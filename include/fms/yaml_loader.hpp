@@ -2,16 +2,27 @@
 //
 // The configuration front end, and the boundary of the exception-free world:
 // src/config/yaml_loader.cpp is the only TU built with -fexceptions, because
-// yaml-cpp reports errors by throwing.  Both entry points are noexcept and
-// catch everything, so callers only ever see a Status plus a diagnostic.
+// yaml-cpp reports errors by throwing.  Every entry point below is noexcept and
+// catches everything, so callers only ever see a Status plus a diagnostic.
+//
+// The configuration comes in two files, loaded independently:
+//
+//   setup    fsm (name, initial) + io      -> fms::Setup    where this instance
+//                                                           runs and how it talks
+//   machine  triggers + states             -> fms::Model    what it does
+//
+// Neither file knows about the other.  The one cross-file reference - the
+// initial state named by the setup - is checked when the two are bound in
+// StateMachine::init.
 //
 // This is also the only phase that allocates: yaml-cpp builds its document on
-// the heap, we copy what we need into the fixed-capacity Model, and the
+// the heap, we copy what we need into the fixed-capacity objects, and the
 // document is destroyed before the function returns.
 #ifndef FMS_YAML_LOADER_HPP
 #define FMS_YAML_LOADER_HPP
 
 #include "fms/model.hpp"
+#include "fms/setup.hpp"
 #include "fms/status.hpp"
 
 namespace fms::config {
@@ -29,12 +40,27 @@ struct Diagnostics {
   }
 };
 
-/// Reads `path` and fills `model`.  `model` is cleared on entry and left empty
-/// if loading fails.
-Status load_file(const char* path, Model& model, Diagnostics& diagnostics) noexcept;
+// ---------------------------------------------------------------------------
+// setup: fsm + io
+// ---------------------------------------------------------------------------
 
-/// Same, from a YAML document already in memory.
-Status load_string(const char* yaml, Model& model, Diagnostics& diagnostics) noexcept;
+/// Reads the setup file into `setup`, which is cleared on entry and left empty
+/// if loading fails.
+Status load_setup_file(const char* path, Setup& setup, Diagnostics& diagnostics) noexcept;
+
+/// Same, from a document already in memory.
+Status load_setup_string(const char* yaml, Setup& setup, Diagnostics& diagnostics) noexcept;
+
+// ---------------------------------------------------------------------------
+// machine: triggers + states
+// ---------------------------------------------------------------------------
+
+/// Reads the machine file into `model`, which is cleared on entry and left
+/// empty if loading fails.
+Status load_machine_file(const char* path, Model& model, Diagnostics& diagnostics) noexcept;
+
+/// Same, from a document already in memory.
+Status load_machine_string(const char* yaml, Model& model, Diagnostics& diagnostics) noexcept;
 
 }  // namespace fms::config
 

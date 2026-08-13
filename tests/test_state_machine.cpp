@@ -15,6 +15,7 @@ fms::StringView sv(const char* text) { return fms::StringView(text, std::strlen(
 /// standing --throttle--> accelerating --brake--> braking --stopped--> standing
 struct Fixture {
   fms::Model        model;
+  fms::Setup        setup;
   fms::StateMachine machine;
 
   fms::StateId standing = fms::kNoState;
@@ -41,9 +42,9 @@ struct Fixture {
     REQUIRE(model.add_transition(accelerating, brake, braking) == fms::Status::Ok);
     REQUIRE(model.add_transition(braking, stopped, standing) == fms::Status::Ok);
 
-    REQUIRE(model.set_initial(standing) == fms::Status::Ok);
     REQUIRE(model.validate() == fms::Status::Ok);
-    REQUIRE(machine.init(model) == fms::Status::Ok);
+    REQUIRE(setup.set_initial(sv("standing")) == fms::Status::Ok);
+    REQUIRE(machine.init(model, setup) == fms::Status::Ok);
   }
 };
 
@@ -133,9 +134,13 @@ TEST_CASE("the model rejects duplicates and dangling references") {
   REQUIRE(model.add_transition(a, t, a) == fms::Status::Ok);
   CHECK(model.add_transition(a, t, a) == fms::Status::DuplicateName);  // same trigger twice
 
-  CHECK(model.validate() == fms::Status::UnknownState);  // no initial state yet
-  REQUIRE(model.set_initial(a) == fms::Status::Ok);
+  // The model validates on its own: the initial state is the setup's business.
   CHECK(model.validate() == fms::Status::Ok);
+}
+
+TEST_CASE("an empty model does not validate") {
+  fms::Model model;
+  CHECK(model.validate() == fms::Status::SchemaError);
 }
 
 TEST_CASE("names longer than the compile-time limit are rejected, never truncated") {

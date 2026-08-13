@@ -2,15 +2,19 @@
 //
 // Car state machine on the console.
 //
-//   ./car_console [car.yaml] [--quiet]
+//   ./car_console [car.setup.yaml] [car.machine.yaml] [--quiet]
+//
+// The configuration comes in two files: the setup says where this instance runs
+// and where it starts, the machine says what it does.  Point the same machine
+// file at a different setup and you have a second deployment.
 //
 // Type a trigger name and press enter; "help" lists them, "quit" ends the
 // session.  It pipes just as well:
 //
-//   printf 'ignition_on\nself_test_passed\nthrottle_pressed\n' | ./car_console car.yaml --quiet
+//   printf 'ignition_on\nself_test_passed\n' | ./car_console --quiet
 //
-// There is nothing to register: the machine is entirely described by the YAML
-// file, and the only application code is the trace hook below.
+// There is nothing to register: the machine is entirely described by the YAML,
+// and the only application code is the trace hook below.
 #include <cstdio>
 #include <cstring>
 
@@ -29,7 +33,18 @@ void trace(void* user, const fms::TransitionEvent& event) {
   }
 }
 
+/// Reports a failed load with the file it came from, so a two-file setup does
+/// not leave you guessing which one is wrong.
+void report(const char* path, fms::Status status, const fms::config::Diagnostics& diagnostics) {
+  std::fprintf(stderr, "%s: %s", path, fms::to_string(status));
+  if (diagnostics.line > 0) {
+    std::fprintf(stderr, " at line %d", diagnostics.line);
+  }
+  std::fprintf(stderr, ": %s\n", diagnostics.message.c_str());
+}
+
 // The whole system, statically allocated.
+fms::Setup        g_setup;
 fms::Model        g_model;
 fms::StateMachine g_machine;
 fms::Runtime      g_runtime;
@@ -37,40 +52,60 @@ fms::Runtime      g_runtime;
 }  // namespace
 
 int main(int argc, char** argv) {
-  const char* path  = "car.yaml";
-  bool        quiet = false;
+  const char* setup_path   = "car.setup.yaml";
+  const char* machine_path = "car.machine.yaml";
+  bool        quiet        = false;
+  int         positional   = 0;
 
   for (int i = 1; i < argc; ++i) {
     if (std::strcmp(argv[i], "--quiet") == 0) {
       quiet = true;
+    } else if (positional == 0) {
+      setup_path = argv[i];
+      ++positional;
     } else {
-      path = argv[i];
+      machine_path = argv[i];
+      ++positional;
     }
   }
 
   // ---- setup phase: the only place that may allocate ----------------------
   fms::config::Diagnostics diagnostics;
-  const fms::Status loaded = fms::config::load_file(path, g_model, diagnostics);
-  if (!fms::is_ok(loaded)) {
-    std::fprintf(stderr, "config error (%s) at line %d: %s\n", fms::to_string(loaded),
-                 diagnostics.line, diagnostics.message.c_str());
+
+  const fms::Status setup_loaded =
+      fms::config::load_setup_file(setup_path, g_setup, diagnostics);
+  if (!fms::is_ok(setup_loaded)) {
+    report(setup_path, setup_loaded, diagnostics);
+    return 1;
+  }
+
+  const fms::Status machine_loaded =
+      fms::config::load_machine_file(machine_path, g_model, diagnostics);
+  if (!fms::is_ok(machine_loaded)) {
+    report(machine_path, machine_loaded, diagnostics);
     return 1;
   }
 
   fms::port::ConsolePort port(/*prompt=*/!quiet);
 
-  if (!fms::is_ok(g_machine.init(g_model))) {
-    std::fputs("state machine init failed\n", stderr);
+  // init() is where the two files have to agree: the initial state named by the
+  // setup must exist in the machine.
+  const fms::Status bound = g_machine.init(g_model, g_setup);
+  if (!fms::is_ok(bound)) {
+    std::fprintf(stderr, "%s does not fit %s: %s ('%s')\n", setup_path, machine_path,
+                 fms::to_string(bound), g_setup.initial_name().c_str());
     return 1;
   }
-  if (!fms::is_ok(g_runtime.init(g_model, g_machine, port))) {
+  if (!fms::is_ok(g_runtime.init(g_machine, port))) {
     std::fputs("runtime init failed\n", stderr);
     return 1;
   }
+
   if (!quiet) {
     g_runtime.set_trace(&trace, &g_model);
-    std::printf("%s: %zu states, %zu triggers - type 'help' or 'quit'\n", g_model.name().c_str(),
-                g_model.state_count(), g_model.trigger_count());
+    std::printf("%s running '%s': %zu states, %zu triggers - type 'help' or 'quit'\n",
+                g_setup.name().c_str(), g_model.name().c_str(), g_model.state_count(),
+                g_model.trigger_count());
   }
 
   const fms::Status started = g_runtime.start();

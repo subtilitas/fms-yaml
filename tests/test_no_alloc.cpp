@@ -18,12 +18,15 @@ namespace {
 
 fms::StringView sv(const char* text) { return fms::StringView(text, std::strlen(text)); }
 
-constexpr const char* kConfig = R"(
+constexpr const char* kSetup = R"(
 fsm:
   initial: standing
 io:
   state_channel: "car/state"
   error_channel: "car/error"
+)";
+
+constexpr const char* kMachine = R"(
 triggers:
   - {name: throttle}
   - {name: brake}
@@ -38,6 +41,7 @@ states:
 )";
 
 // Statically allocated, exactly as an embedded target would have it.
+fms::Setup              g_setup;
 fms::Model              g_model;
 fms::StateMachine       g_machine;
 fms::Runtime            g_runtime;
@@ -48,12 +52,13 @@ fms::port::MemoryPort<> g_port;
 TEST_CASE("the run phase does not touch the heap") {
   // ---- setup phase: allocation is expected and allowed --------------------
   fms::config::Diagnostics diagnostics;
-  const fms::Status loaded = fms::config::load_string(kConfig, g_model, diagnostics);
+  REQUIRE(fms::config::load_setup_string(kSetup, g_setup, diagnostics) == fms::Status::Ok);
+  const fms::Status loaded = fms::config::load_machine_string(kMachine, g_model, diagnostics);
   INFO("diagnostic: ", diagnostics.message.c_str());
   REQUIRE(loaded == fms::Status::Ok);
 
-  REQUIRE(g_machine.init(g_model) == fms::Status::Ok);
-  REQUIRE(g_runtime.init(g_model, g_machine, g_port) == fms::Status::Ok);
+  REQUIRE(g_machine.init(g_model, g_setup) == fms::Status::Ok);
+  REQUIRE(g_runtime.init(g_machine, g_port) == fms::Status::Ok);
   REQUIRE(g_runtime.start() == fms::Status::Ok);
 
   // ---- run phase ----------------------------------------------------------

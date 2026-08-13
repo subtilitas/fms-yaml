@@ -3,8 +3,8 @@
 // The exception firewall.
 //
 // This is the only translation unit compiled with -fexceptions, because
-// yaml-cpp reports every problem by throwing.  Both public entry points wrap
-// their whole body in try/catch, so an exception can never leave this file.
+// yaml-cpp reports every problem by throwing.  Every public entry point wraps
+// its whole body in try/catch, so an exception can never leave this file.
 #include "fms/yaml_loader.hpp"
 
 #include <cstdio>
@@ -48,12 +48,24 @@ bool read_string(const YAML::Node& node, TString& out) {
   return true;
 }
 
+/// The two files are separate on purpose, so a section that wandered into the
+/// wrong one is a mistake worth naming rather than ignoring.
+bool reject_foreign_section(const YAML::Node& root, const char* key, const char* belongs_in,
+                            Diagnostics& diagnostics) {
+  const YAML::Node node = root[key];
+  if (!node) {
+    return false;
+  }
+  set_message(diagnostics, Status::SchemaError, line_of(node),
+              "'%s' belongs in the %s file", key, belongs_in);
+  return true;
+}
+
+// ---------------------------------------------------------------------------
+// setup file: fsm + io
 // ---------------------------------------------------------------------------
 
-/// The 'io' section is deliberately thin: two channels the machine talks on,
-/// and two opaque strings the port may interpret however it likes.  Nothing
-/// here is specific to a transport.
-Status parse_io(const YAML::Node& root, Model& model, Diagnostics& diagnostics) {
+Status parse_io(const YAML::Node& root, Setup& setup, Diagnostics& diagnostics) {
   const YAML::Node node = root["io"];
   if (!node) {
     return Status::Ok;  // optional section
@@ -63,7 +75,7 @@ Status parse_io(const YAML::Node& root, Model& model, Diagnostics& diagnostics) 
     return Status::SchemaError;
   }
 
-  IoConfig& io = model.mutable_io();
+  IoConfig& io = setup.mutable_io();
 
   if (node["state_channel"] && !read_string(node["state_channel"], io.state_channel)) {
     set_message(diagnostics, Status::ChannelTooLong, line_of(node["state_channel"]),
@@ -87,6 +99,47 @@ Status parse_io(const YAML::Node& root, Model& model, Diagnostics& diagnostics) 
   }
   return Status::Ok;
 }
+
+Status parse_setup(const YAML::Node& root, Setup& setup, Diagnostics& diagnostics) {
+  if (!root.IsMap()) {
+    set_message(diagnostics, Status::SchemaError, line_of(root),
+                "the document root must be a mapping");
+    return Status::SchemaError;
+  }
+  if (reject_foreign_section(root, "states", "machine", diagnostics) ||
+      reject_foreign_section(root, "triggers", "machine", diagnostics)) {
+    return Status::SchemaError;
+  }
+
+  const YAML::Node fsm = root["fsm"];
+  if (!fsm || !fsm.IsMap() || !fsm["initial"]) {
+    set_message(diagnostics, Status::SchemaError, line_of(fsm),
+                "'fsm' must be a mapping containing 'initial'");
+    return Status::SchemaError;
+  }
+
+  if (fsm["name"]) {
+    const std::string name = fsm["name"].as<std::string>();
+    if (!is_ok(setup.set_name(as_view(name)))) {
+      set_message(diagnostics, Status::NameTooLong, line_of(fsm["name"]), "fsm.name is too long");
+      return Status::NameTooLong;
+    }
+  }
+
+  const std::string initial = fsm["initial"].as<std::string>();
+  const Status      status  = setup.set_initial(as_view(initial));
+  if (!is_ok(status)) {
+    set_message(diagnostics, status, line_of(fsm["initial"]), "fsm.initial: %s",
+                to_string(status));
+    return status;
+  }
+
+  return parse_io(root, setup, diagnostics);
+}
+
+// ---------------------------------------------------------------------------
+// machine file: triggers + states
+// ---------------------------------------------------------------------------
 
 Status parse_triggers(const YAML::Node& root, Model& model, Diagnostics& diagnostics) {
   const YAML::Node node = root["triggers"];
@@ -186,20 +239,24 @@ Status link_states(const YAML::Node& node, Model& model, Diagnostics& diagnostic
   return Status::Ok;
 }
 
-Status parse_document(const YAML::Node& root, Model& model, Diagnostics& diagnostics) {
+Status parse_machine(const YAML::Node& root, Model& model, Diagnostics& diagnostics) {
   if (!root.IsMap()) {
     set_message(diagnostics, Status::SchemaError, line_of(root),
                 "the document root must be a mapping");
     return Status::SchemaError;
   }
-
-  const YAML::Node fsm = root["fsm"];
-  if (!fsm || !fsm.IsMap() || !fsm["initial"]) {
-    set_message(diagnostics, Status::SchemaError, line_of(fsm),
-                "'fsm' must be a mapping containing 'initial'");
+  if (reject_foreign_section(root, "io", "setup", diagnostics)) {
     return Status::SchemaError;
   }
-  if (fsm["name"]) {
+  // 'fsm' is allowed here, but only as a label for the definition: an 'initial'
+  // key in the machine file is a setup key in the wrong place.
+  const YAML::Node fsm = root["fsm"];
+  if (fsm && fsm.IsMap() && fsm["initial"]) {
+    set_message(diagnostics, Status::SchemaError, line_of(fsm["initial"]),
+                "'fsm.initial' belongs in the setup file");
+    return Status::SchemaError;
+  }
+  if (fsm && fsm.IsMap() && fsm["name"]) {
     const std::string name = fsm["name"].as<std::string>();
     if (!is_ok(model.set_name(as_view(name)))) {
       set_message(diagnostics, Status::NameTooLong, line_of(fsm["name"]), "fsm.name is too long");
@@ -207,11 +264,7 @@ Status parse_document(const YAML::Node& root, Model& model, Diagnostics& diagnos
     }
   }
 
-  Status status = parse_io(root, model, diagnostics);
-  if (!is_ok(status)) {
-    return status;
-  }
-  status = parse_triggers(root, model, diagnostics);
+  Status status = parse_triggers(root, model, diagnostics);
   if (!is_ok(status)) {
     return status;
   }
@@ -232,21 +285,55 @@ Status parse_document(const YAML::Node& root, Model& model, Diagnostics& diagnos
     return status;
   }
 
-  const std::string initial    = fsm["initial"].as<std::string>();
-  const StateId     initial_id = model.find_state(as_view(initial));
-  if (initial_id == kNoState) {
-    set_message(diagnostics, Status::UnknownState, line_of(fsm["initial"]),
-                "initial state '%s' does not exist", initial.c_str());
-    return Status::UnknownState;
-  }
-  model.set_initial(initial_id);
-
   status = model.validate();
   if (!is_ok(status)) {
     set_message(diagnostics, status, -1, "validation failed: %s", to_string(status));
-    return status;
   }
-  return Status::Ok;
+  return status;
+}
+
+// ---------------------------------------------------------------------------
+// shared plumbing for the four entry points
+// ---------------------------------------------------------------------------
+
+bool file_is_readable(const char* path, Diagnostics& diagnostics) {
+  std::FILE* probe = std::fopen(path, "rb");
+  if (probe == nullptr) {
+    set_message(diagnostics, Status::FileNotFound, -1, "cannot open '%s'", path);
+    return false;
+  }
+  std::fclose(probe);
+  return true;
+}
+
+/// Runs `parse` over a document and funnels every exception into a Status.
+/// `Target` is Setup or Model; both have clear().
+template <typename Target, typename Parse, typename Produce>
+Status guarded(Target& target, Diagnostics& diagnostics, Produce produce, Parse parse) noexcept {
+  install_etl_error_handler();
+  diagnostics.reset();
+  target.clear();
+
+  try {
+    const YAML::Node root   = produce();
+    const Status     status = parse(root, target, diagnostics);
+    if (!is_ok(status)) {
+      target.clear();
+    }
+    return status;
+  } catch (const YAML::Exception& e) {
+    set_message(diagnostics, Status::ParseError, e.mark.line + 1, "%s", e.what());
+    target.clear();
+    return Status::ParseError;
+  } catch (const std::exception& e) {
+    set_message(diagnostics, Status::ParseError, -1, "%s", e.what());
+    target.clear();
+    return Status::ParseError;
+  } catch (...) {
+    set_message(diagnostics, Status::ParseError, -1, "unknown error while reading YAML");
+    target.clear();
+    return Status::ParseError;
+  }
 }
 
 }  // namespace
@@ -255,75 +342,48 @@ Status parse_document(const YAML::Node& root, Model& model, Diagnostics& diagnos
 // public entry points - nothing throws past this line
 // ---------------------------------------------------------------------------
 
-Status load_string(const char* yaml, Model& model, Diagnostics& diagnostics) noexcept {
-  install_etl_error_handler();
-  diagnostics.reset();
-  model.clear();
-
+Status load_setup_string(const char* yaml, Setup& setup, Diagnostics& diagnostics) noexcept {
   if (yaml == nullptr) {
+    diagnostics.reset();
     set_message(diagnostics, Status::InvalidArgument, -1, "null YAML buffer");
     return Status::InvalidArgument;
   }
-
-  try {
-    const YAML::Node root   = YAML::Load(yaml);
-    const Status     status = parse_document(root, model, diagnostics);
-    if (!is_ok(status)) {
-      model.clear();
-    }
-    return status;
-  } catch (const YAML::Exception& e) {
-    set_message(diagnostics, Status::ParseError, e.mark.line + 1, "%s", e.what());
-    model.clear();
-    return Status::ParseError;
-  } catch (const std::exception& e) {
-    set_message(diagnostics, Status::ParseError, -1, "%s", e.what());
-    model.clear();
-    return Status::ParseError;
-  } catch (...) {
-    set_message(diagnostics, Status::ParseError, -1, "unknown error while parsing YAML");
-    model.clear();
-    return Status::ParseError;
-  }
+  return guarded(setup, diagnostics, [yaml] { return YAML::Load(yaml); }, parse_setup);
 }
 
-Status load_file(const char* path, Model& model, Diagnostics& diagnostics) noexcept {
-  install_etl_error_handler();
+Status load_setup_file(const char* path, Setup& setup, Diagnostics& diagnostics) noexcept {
   diagnostics.reset();
-  model.clear();
-
   if (path == nullptr) {
     set_message(diagnostics, Status::InvalidArgument, -1, "null path");
     return Status::InvalidArgument;
   }
-
-  try {
-    std::FILE* probe = std::fopen(path, "rb");
-    if (probe == nullptr) {
-      set_message(diagnostics, Status::FileNotFound, -1, "cannot open '%s'", path);
-      return Status::FileNotFound;
-    }
-    std::fclose(probe);
-
-    const YAML::Node root   = YAML::LoadFile(path);
-    const Status     status = parse_document(root, model, diagnostics);
-    if (!is_ok(status)) {
-      model.clear();
-    }
-    return status;
-  } catch (const YAML::Exception& e) {
-    set_message(diagnostics, Status::ParseError, e.mark.line + 1, "%s", e.what());
-    model.clear();
-    return Status::ParseError;
-  } catch (const std::exception& e) {
-    set_message(diagnostics, Status::ParseError, -1, "%s", e.what());
-    model.clear();
-    return Status::ParseError;
-  } catch (...) {
-    set_message(diagnostics, Status::ParseError, -1, "unknown error while loading YAML");
-    model.clear();
-    return Status::ParseError;
+  if (!file_is_readable(path, diagnostics)) {
+    setup.clear();
+    return Status::FileNotFound;
   }
+  return guarded(setup, diagnostics, [path] { return YAML::LoadFile(path); }, parse_setup);
+}
+
+Status load_machine_string(const char* yaml, Model& model, Diagnostics& diagnostics) noexcept {
+  if (yaml == nullptr) {
+    diagnostics.reset();
+    set_message(diagnostics, Status::InvalidArgument, -1, "null YAML buffer");
+    return Status::InvalidArgument;
+  }
+  return guarded(model, diagnostics, [yaml] { return YAML::Load(yaml); }, parse_machine);
+}
+
+Status load_machine_file(const char* path, Model& model, Diagnostics& diagnostics) noexcept {
+  diagnostics.reset();
+  if (path == nullptr) {
+    set_message(diagnostics, Status::InvalidArgument, -1, "null path");
+    return Status::InvalidArgument;
+  }
+  if (!file_is_readable(path, diagnostics)) {
+    model.clear();
+    return Status::FileNotFound;
+  }
+  return guarded(model, diagnostics, [path] { return YAML::LoadFile(path); }, parse_machine);
 }
 
 }  // namespace fms::config

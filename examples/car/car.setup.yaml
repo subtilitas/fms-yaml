@@ -1,0 +1,18 @@
+# Setup: where this instance runs and how it talks.
+#
+# Everything except the states and triggers themselves.  Swap this file to
+# deploy the same machine somewhere else - a bench, a test rig, another car -
+# without touching car.machine.yaml.
+
+fsm:
+  name: car-ecu-01     # this instance
+  initial: power_off   # where it starts; must be a state in the machine file
+
+io:
+  state_channel: "car/state"   # where the machine announces its state
+  error_channel: "car/error"   # where it reports refused triggers
+
+  # Opaque strings, handed to the port untouched.  The console port ignores
+  # them; a networked port would read them as a broker URI and a client id.
+  endpoint: ""
+  identity: "car-ecu-01"

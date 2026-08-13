@@ -3,7 +3,7 @@
 // An IPort over std::cin and std::cout.  Type a trigger name, get the new state
 // back.  Works just as well with a pipe:
 //
-//     printf 'ignition_on\nselftest_passed\n' | ./car_console car.yaml
+//     printf 'ignition_on\nself_test_passed\n' | ./car_console --quiet
 //
 // Lives in its own target (fms_console) because it pulls in <iostream>, which a
 // firmware build has no use for.  The core does not depend on it.

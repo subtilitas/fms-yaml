@@ -17,6 +17,13 @@ class MemoryPort final : public IPort {
   MemoryPort() noexcept = default;
 
   // ---- IPort --------------------------------------------------------------
+  Status configure(const IoConfig& io) noexcept override {
+    io_                     = io;
+    configured_             = true;
+    configured_before_open_ = !open_;
+    return Status::Ok;
+  }
+
   Status open() noexcept override {
     open_ = true;
     return Status::Ok;
@@ -99,7 +106,10 @@ class MemoryPort final : public IPort {
     errors_.clear();
   }
 
-  bool is_open() const noexcept { return open_; }
+  bool            is_open() const noexcept { return open_; }
+  bool            configured() const noexcept { return configured_; }
+  bool            configured_before_open() const noexcept { return configured_before_open_; }
+  const IoConfig& io() const noexcept { return io_; }
 
  private:
   template <typename TVector>
@@ -116,8 +126,12 @@ class MemoryPort final : public IPort {
     return Status::Ok;
   }
 
-  bool open_         = false;
-  bool end_of_input_ = false;
+  bool open_                   = false;
+  bool end_of_input_           = false;
+  bool configured_             = false;
+  bool configured_before_open_ = false;
+
+  IoConfig io_{};
 
   Channel current_{};  ///< storage the view handed to receive() points at
 

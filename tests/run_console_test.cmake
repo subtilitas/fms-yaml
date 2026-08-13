@@ -7,7 +7,7 @@
 # Run through ctest; see the car_console_pipe test in the top-level CMakeLists.
 
 execute_process(
-  COMMAND         "${EXE}" "${CONFIG}" --quiet
+  COMMAND         "${EXE}" "${SETUP}" "${MACHINE}" --quiet
   INPUT_FILE      "${SCRIPT}"
   OUTPUT_VARIABLE actual
   ERROR_VARIABLE  errors

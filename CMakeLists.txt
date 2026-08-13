@@ -97,6 +97,7 @@ endif()
 add_library(fms_core STATIC
   src/status.cpp
   src/model.cpp
+  src/setup.cpp
   src/state_machine.cpp
   src/runtime.cpp)
 add_library(fms::core ALIAS fms_core)
@@ -151,10 +152,12 @@ if(FMS_BUILD_EXAMPLES AND FMS_BUILD_CONSOLE)
   target_link_libraries(car_console PRIVATE fms_core fms_config fms_console)
   fms_disable_exceptions(car_console)
   fms_warnings(car_console)
-  add_custom_command(TARGET car_console POST_BUILD
-    COMMAND ${CMAKE_COMMAND} -E copy_if_different
-            ${CMAKE_CURRENT_SOURCE_DIR}/examples/car/car.yaml
-            $<TARGET_FILE_DIR:car_console>/car.yaml)
+  foreach(config car.setup.yaml car.machine.yaml)
+    add_custom_command(TARGET car_console POST_BUILD
+      COMMAND ${CMAKE_COMMAND} -E copy_if_different
+              ${CMAKE_CURRENT_SOURCE_DIR}/examples/car/${config}
+              $<TARGET_FILE_DIR:car_console>/${config})
+  endforeach()
 endif()
 
 # ---------------------------------------------------------------------------
@@ -176,6 +179,7 @@ if(FMS_BUILD_TESTS)
   add_executable(fms_tests
     tests/test_main.cpp
     tests/test_state_machine.cpp
+    tests/test_setup.cpp
     tests/test_loader.cpp
     tests/test_runtime.cpp
     tests/test_no_alloc.cpp)
@@ -192,7 +196,8 @@ if(FMS_BUILD_TESTS)
     add_test(NAME car_console_pipe
       COMMAND ${CMAKE_COMMAND}
               -DEXE=$<TARGET_FILE:car_console>
-              -DCONFIG=${CMAKE_CURRENT_SOURCE_DIR}/examples/car/car.yaml
+              -DSETUP=${CMAKE_CURRENT_SOURCE_DIR}/examples/car/car.setup.yaml
+              -DMACHINE=${CMAKE_CURRENT_SOURCE_DIR}/examples/car/car.machine.yaml
               -DSCRIPT=${CMAKE_CURRENT_SOURCE_DIR}/tests/car_session.txt
               -DEXPECTED=${CMAKE_CURRENT_SOURCE_DIR}/tests/car_session.expected
               -P ${CMAKE_CURRENT_SOURCE_DIR}/tests/run_console_test.cmake)

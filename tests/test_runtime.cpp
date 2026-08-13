@@ -25,13 +25,20 @@ void trace(void*, const fms::TransitionEvent& event) {
   }
 }
 
-constexpr const char* kConfig = R"(
+constexpr const char* kSetup = R"(
 fsm:
-  name: car
+  name: car-under-test
   initial: standing
 io:
   state_channel: "car/state"
   error_channel: "car/error"
+  endpoint: "loopback"
+  identity: "unit-test"
+)";
+
+constexpr const char* kMachine = R"(
+fsm:
+  name: car
 triggers:
   - {name: throttle_pressed}
   - {name: brake_pressed, channel: "car/brakes/pressed"}
@@ -49,6 +56,7 @@ states:
 )";
 
 struct Harness {
+  fms::Setup               setup;
   fms::Model               model;
   fms::StateMachine        machine;
   fms::Runtime             runtime;
@@ -59,12 +67,13 @@ struct Harness {
     g_traced   = 0;
     g_rejected = 0;
 
-    const fms::Status loaded = fms::config::load_string(kConfig, model, diagnostics);
+    REQUIRE(fms::config::load_setup_string(kSetup, setup, diagnostics) == fms::Status::Ok);
+    const fms::Status loaded = fms::config::load_machine_string(kMachine, model, diagnostics);
     INFO("diagnostic: ", diagnostics.message.c_str());
     REQUIRE(loaded == fms::Status::Ok);
 
-    REQUIRE(machine.init(model) == fms::Status::Ok);
-    REQUIRE(runtime.init(model, machine, port) == fms::Status::Ok);
+    REQUIRE(machine.init(model, setup) == fms::Status::Ok);
+    REQUIRE(runtime.init(machine, port) == fms::Status::Ok);
     runtime.set_trace(&trace, nullptr);
     REQUIRE(runtime.start() == fms::Status::Ok);
   }
@@ -77,11 +86,29 @@ struct Harness {
 
 }  // namespace
 
-TEST_CASE("start opens the port, announces every channel and publishes the initial state") {
+TEST_CASE("start configures and opens the port, announces every channel and publishes the initial state") {
   Harness h;
   CHECK(h.port.is_open());
   CHECK(h.port.listening().size() == 3);
   CHECK(h.port.last_state() == sv("standing"));
+}
+
+TEST_CASE("the io block of the setup reaches the port") {
+  Harness h;
+  // configure() ran before open(), with the values from the setup file.
+  CHECK(h.port.configured());
+  CHECK(sv(h.port.io().endpoint.c_str()) == sv("loopback"));
+  CHECK(sv(h.port.io().identity.c_str()) == sv("unit-test"));
+  CHECK(sv(h.port.io().state_channel.c_str()) == sv("car/state"));
+  CHECK(h.port.configured_before_open());
+}
+
+TEST_CASE("a runtime cannot be bound to an uninitialised machine") {
+  Harness            h;
+  fms::StateMachine  fresh;
+  fms::Runtime       runtime;
+  fms::port::MemoryPort<> port;
+  CHECK(runtime.init(fresh, port) == fms::Status::NotInitialised);
 }
 
 TEST_CASE("a trigger without an explicit channel listens on its own name") {

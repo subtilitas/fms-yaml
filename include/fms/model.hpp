@@ -1,6 +1,8 @@
 // SPDX-License-Identifier: MIT
 //
-// The machine description, built once from YAML and then read-only.
+// The behaviour half of the configuration: states, triggers, and nothing else.
+// No names of brokers, no endpoints, no starting state - those live in Setup,
+// so this object describes what the machine *does*, not where it is deployed.
 //
 //   states_        flat_map<StateId, StateNode>      a state and its dependencies
 //   StateNode
@@ -40,15 +42,6 @@ struct StateNode {
   TransitionMap transitions{};
 };
 
-/// Where the machine talks, and how to reach the world.  Every field is opaque
-/// to the core - it is the port that decides what an endpoint string means.
-struct IoConfig {
-  Channel state_channel{};  ///< the new state's name is published here on every change
-  Channel error_channel{};  ///< rejected triggers are reported here
-  Channel endpoint{};       ///< broker URI, device path, socket - port specific
-  Name    identity{};       ///< client id, node name - port specific
-};
-
 class Model {
  public:
   using StateMap     = etl::flat_map<StateId, StateNode, limits::kMaxStates>;
@@ -71,22 +64,20 @@ class Model {
   /// An empty `channel` defaults to `name`.
   Status declare_trigger(StringView name, StringView channel, TriggerId& out_id) noexcept;
   Status add_transition(StateId from, TriggerId trigger, StateId target) noexcept;
-  Status set_initial(StateId id) noexcept;
 
-  /// Cross-checks every reference.  Called at the end of loading.
+  /// Cross-checks every reference inside the machine.  Called at the end of
+  /// loading.  Note that the initial state is not checked here - it belongs to
+  /// the setup, and is verified when the two are bound in StateMachine::init.
   Status validate() const noexcept;
-
-  IoConfig& mutable_io() noexcept { return io_; }
 
   // ---- read-only run-time interface --------------------------------------
 
+  /// Optional name of the machine definition itself, e.g. "car".
   const Name& name() const noexcept { return name_; }
-  StateId     initial() const noexcept { return initial_; }
 
   const StateMap&     states() const noexcept { return states_; }
   const TriggerMap&   triggers() const noexcept { return triggers_; }
   const ChannelIndex& channel_index() const noexcept { return channel_index_; }
-  const IoConfig&     io() const noexcept { return io_; }
 
   bool              has_state(StateId id) const noexcept;
   const StateNode*  state(StateId id) const noexcept;
@@ -108,9 +99,7 @@ class Model {
   std::size_t trigger_count() const noexcept { return triggers_.size(); }
 
  private:
-  Name     name_{};
-  StateId  initial_ = kNoState;
-  IoConfig io_{};
+  Name name_{};
 
   StateMap     states_{};
   StateIndex   state_index_{};

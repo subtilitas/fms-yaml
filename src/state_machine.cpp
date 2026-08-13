@@ -3,7 +3,7 @@
 
 namespace fms {
 
-Status StateMachine::init(const Model& model) noexcept {
+Status StateMachine::init(const Model& model, const Setup& setup) noexcept {
   install_etl_error_handler();
 
   if (started_) {
@@ -13,8 +13,17 @@ Status StateMachine::init(const Model& model) noexcept {
   if (!is_ok(validation)) {
     return validation;
   }
+  // The two files were loaded independently; this is the moment they have to
+  // agree.  A setup naming a state the machine does not have fails here, at
+  // start-up, not on the first trigger.
+  const Status binding = setup.validate_against(model);
+  if (!is_ok(binding)) {
+    return binding;
+  }
 
   model_            = &model;
+  setup_            = &setup;
+  initial_          = setup.initial_in(model);
   current_          = kNoState;
   transition_count_ = 0;
   rejection_count_  = 0;
@@ -22,17 +31,17 @@ Status StateMachine::init(const Model& model) noexcept {
 }
 
 Status StateMachine::start() noexcept {
-  if (model_ == nullptr) {
+  if (model_ == nullptr || setup_ == nullptr) {
     return Status::NotInitialised;
   }
   if (started_) {
     return Status::AlreadyInitialised;
   }
-  if (!model_->has_state(model_->initial())) {
+  if (!model_->has_state(initial_)) {
     return Status::UnknownState;
   }
 
-  current_ = model_->initial();
+  current_ = initial_;
   started_ = true;
   return Status::Ok;
 }

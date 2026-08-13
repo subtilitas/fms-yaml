@@ -25,11 +25,13 @@ class Runtime {
   Runtime(const Runtime&) = delete;
   Runtime& operator=(const Runtime&) = delete;
 
-  /// Binds model, machine and port.  All must outlive the Runtime.
-  Status init(const Model& model, StateMachine& machine, IPort& port) noexcept;
+  /// Binds an already initialised machine to a port; both must outlive the
+  /// Runtime.  The model and the setup come from the machine, so there is no
+  /// way to hand in a mismatched pair.
+  Status init(StateMachine& machine, IPort& port) noexcept;
 
-  /// Opens the port, announces every trigger channel, enters the initial state
-  /// and publishes it.  After this returns, the system does not allocate.
+  /// Configures and opens the port, announces every trigger channel, enters the
+  /// initial state and publishes it.  After this returns, nothing allocates.
   Status start() noexcept;
 
   /// One iteration of the main loop: wait up to `timeout_ms` for input and
@@ -56,6 +58,7 @@ class Runtime {
   void   publish_unknown(StringView channel) noexcept;
 
   const Model*  model_   = nullptr;
+  const Setup*  setup_   = nullptr;
   StateMachine* machine_ = nullptr;
   IPort*        port_    = nullptr;
 

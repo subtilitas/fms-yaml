@@ -8,8 +8,6 @@ constexpr const char* kInvalid = "<invalid>";
 
 void Model::clear() noexcept {
   name_.clear();
-  initial_ = kNoState;
-  io_ = IoConfig{};
   states_.clear();
   state_index_.clear();
   triggers_.clear();
@@ -110,20 +108,9 @@ Status Model::add_transition(StateId from, TriggerId trigger, StateId target) no
   return Status::Ok;
 }
 
-Status Model::set_initial(StateId id) noexcept {
-  if (!has_state(id)) {
-    return Status::UnknownState;
-  }
-  initial_ = id;
-  return Status::Ok;
-}
-
 Status Model::validate() const noexcept {
   if (states_.empty()) {
     return Status::SchemaError;
-  }
-  if (!has_state(initial_)) {
-    return Status::UnknownState;
   }
 
   for (const auto& entry : states_) {
