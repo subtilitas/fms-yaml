@@ -1,0 +1,80 @@
+# Car state machine.
+#
+#   power_off --ignition_on--> self_test --passed--> standing
+#   standing  --throttle--> accelerating --release--> coasting --brake--> braking
+#   braking   --wheels stopped--> standing
+#   anything the current state does not list is rejected and reported on
+#   car/error - there are no guards, no actions and no parameters.
+#
+# Each subsystem owns its topics: the brake controller publishes on
+# car/brakes/..., the engine on car/engine/..., and so on.
+
+fsm:
+  name: car
+  initial: power_off
+
+mqtt:
+  broker: "tcp://localhost:1883"
+  client_id: "car-ecu-01"
+  qos: 1
+  state_topic: "car/state"     # every state change is published here
+  error_topic: "car/error"     # rejected triggers are reported here
+  retain_state: true
+
+triggers:
+  # ignition switch
+  - {name: ignition_on,      topic: "car/ignition/on"}
+  - {name: ignition_off,     topic: "car/ignition/off"}
+  # self test unit
+  - {name: self_test_passed, topic: "car/selftest/passed"}
+  - {name: self_test_failed, topic: "car/selftest/failed"}
+  # engine / throttle
+  - {name: throttle_pressed,  topic: "car/engine/throttle_pressed"}
+  - {name: throttle_released, topic: "car/engine/throttle_released"}
+  - {name: engine_fault,      topic: "car/engine/fault"}
+  # brake system
+  - {name: brake_pressed,  topic: "car/brakes/pressed"}
+  - {name: brake_released, topic: "car/brakes/released"}
+  # wheel speed sensors
+  - {name: vehicle_stopped, topic: "car/wheels/stopped"}
+
+states:
+  - name: power_off
+    transitions:
+      ignition_on: self_test
+
+  - name: self_test
+    transitions:
+      self_test_passed: standing
+      self_test_failed: fault
+      ignition_off:     power_off
+
+  - name: standing
+    transitions:
+      throttle_pressed: accelerating
+      brake_pressed:    standing      # holding the brake while parked changes nothing
+      engine_fault:     fault
+      ignition_off:     power_off
+
+  - name: accelerating
+    transitions:
+      throttle_released: coasting
+      brake_pressed:     braking
+      engine_fault:      fault
+
+  - name: coasting
+    transitions:
+      throttle_pressed: accelerating
+      brake_pressed:    braking
+      vehicle_stopped:  standing
+      engine_fault:     fault
+
+  - name: braking
+    transitions:
+      vehicle_stopped: standing
+      brake_released:  coasting
+      engine_fault:    fault
+
+  - name: fault
+    transitions:
+      ignition_off: power_off
