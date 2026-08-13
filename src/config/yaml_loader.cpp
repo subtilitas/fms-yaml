@@ -21,7 +21,7 @@ void set_message(Diagnostics& diagnostics, Status status, int line, const char* 
   diagnostics.status = status;
   diagnostics.line   = line;
 
-  char buffer[limits::kMaxPayloadLength + 1];
+  char buffer[limits::kMaxMessageLength + 1];
   std::snprintf(buffer, sizeof(buffer), fmt, arg0, arg1);
 
   std::size_t length = std::strlen(buffer);
@@ -50,58 +50,40 @@ bool read_string(const YAML::Node& node, TString& out) {
 
 // ---------------------------------------------------------------------------
 
-Status parse_mqtt(const YAML::Node& root, Model& model, Diagnostics& diagnostics) {
-  const YAML::Node node = root["mqtt"];
+/// The 'io' section is deliberately thin: two channels the machine talks on,
+/// and two opaque strings the port may interpret however it likes.  Nothing
+/// here is specific to a transport.
+Status parse_io(const YAML::Node& root, Model& model, Diagnostics& diagnostics) {
+  const YAML::Node node = root["io"];
   if (!node) {
-    return Status::Ok;  // optional section, defaults apply
+    return Status::Ok;  // optional section
   }
   if (!node.IsMap()) {
-    set_message(diagnostics, Status::SchemaError, line_of(node), "'mqtt' must be a mapping");
+    set_message(diagnostics, Status::SchemaError, line_of(node), "'io' must be a mapping");
     return Status::SchemaError;
   }
 
-  MqttConfig& mqtt = model.mutable_mqtt();
+  IoConfig& io = model.mutable_io();
 
-  if (node["broker"] && !read_string(node["broker"], mqtt.broker)) {
-    set_message(diagnostics, Status::TopicTooLong, line_of(node["broker"]),
-                "mqtt.broker is too long");
-    return Status::TopicTooLong;
+  if (node["state_channel"] && !read_string(node["state_channel"], io.state_channel)) {
+    set_message(diagnostics, Status::ChannelTooLong, line_of(node["state_channel"]),
+                "io.state_channel is too long");
+    return Status::ChannelTooLong;
   }
-  if (node["client_id"] && !read_string(node["client_id"], mqtt.client_id)) {
-    set_message(diagnostics, Status::NameTooLong, line_of(node["client_id"]),
-                "mqtt.client_id is too long");
+  if (node["error_channel"] && !read_string(node["error_channel"], io.error_channel)) {
+    set_message(diagnostics, Status::ChannelTooLong, line_of(node["error_channel"]),
+                "io.error_channel is too long");
+    return Status::ChannelTooLong;
+  }
+  if (node["endpoint"] && !read_string(node["endpoint"], io.endpoint)) {
+    set_message(diagnostics, Status::ChannelTooLong, line_of(node["endpoint"]),
+                "io.endpoint is too long");
+    return Status::ChannelTooLong;
+  }
+  if (node["identity"] && !read_string(node["identity"], io.identity)) {
+    set_message(diagnostics, Status::NameTooLong, line_of(node["identity"]),
+                "io.identity is too long");
     return Status::NameTooLong;
-  }
-  if (node["keep_alive_seconds"]) {
-    mqtt.keep_alive_s = node["keep_alive_seconds"].as<std::uint16_t>();
-  }
-  if (node["clean_session"]) {
-    mqtt.clean_session = node["clean_session"].as<bool>();
-  }
-  if (node["connect_timeout_ms"]) {
-    mqtt.connect_timeout_ms = node["connect_timeout_ms"].as<std::uint32_t>();
-  }
-  if (node["qos"]) {
-    const auto qos = node["qos"].as<unsigned>();
-    if (qos > 2u) {
-      set_message(diagnostics, Status::SchemaError, line_of(node["qos"]),
-                  "mqtt.qos must be 0, 1 or 2");
-      return Status::SchemaError;
-    }
-    mqtt.qos = static_cast<std::uint8_t>(qos);
-  }
-  if (node["state_topic"] && !read_string(node["state_topic"], mqtt.state_topic)) {
-    set_message(diagnostics, Status::TopicTooLong, line_of(node["state_topic"]),
-                "mqtt.state_topic is too long");
-    return Status::TopicTooLong;
-  }
-  if (node["error_topic"] && !read_string(node["error_topic"], mqtt.error_topic)) {
-    set_message(diagnostics, Status::TopicTooLong, line_of(node["error_topic"]),
-                "mqtt.error_topic is too long");
-    return Status::TopicTooLong;
-  }
-  if (node["retain_state"]) {
-    mqtt.retain_state = node["retain_state"].as<bool>();
   }
   return Status::Ok;
 }
@@ -122,13 +104,13 @@ Status parse_triggers(const YAML::Node& root, Model& model, Diagnostics& diagnos
     }
 
     const std::string name = entry["name"].as<std::string>();
-    std::string       topic;
-    if (entry["topic"]) {
-      topic = entry["topic"].as<std::string>();
+    std::string       channel;  // empty: declare_trigger defaults it to the name
+    if (entry["channel"]) {
+      channel = entry["channel"].as<std::string>();
     }
 
     TriggerId    id     = kNoTrigger;
-    const Status status = model.declare_trigger(as_view(name), as_view(topic), id);
+    const Status status = model.declare_trigger(as_view(name), as_view(channel), id);
     if (!is_ok(status)) {
       set_message(diagnostics, status, line_of(entry), "trigger '%s': %s", name.c_str(),
                   to_string(status));
@@ -225,7 +207,7 @@ Status parse_document(const YAML::Node& root, Model& model, Diagnostics& diagnos
     }
   }
 
-  Status status = parse_mqtt(root, model, diagnostics);
+  Status status = parse_io(root, model, diagnostics);
   if (!is_ok(status)) {
     return status;
   }

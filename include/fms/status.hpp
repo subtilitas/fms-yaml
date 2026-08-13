@@ -19,7 +19,7 @@ enum class Status : std::uint8_t {
   UnknownState,
   UnknownTrigger,
   NameTooLong,
-  TopicTooLong,
+  ChannelTooLong,
   CapacityExceeded, ///< one of the fms::limits ceilings was hit
 
   // --- runtime -------------------------------------------------------------
@@ -28,10 +28,11 @@ enum class Status : std::uint8_t {
   InvalidArgument,
   NoTransition,     ///< the current state does not accept this trigger
 
-  // --- transport -----------------------------------------------------------
-  TransportError,
-  NotConnected,
-  Timeout,
+  // --- port ----------------------------------------------------------------
+  PortError,
+  NotOpen,
+  Timeout,          ///< nothing arrived within the poll window (not an error)
+  EndOfInput,       ///< the input source is exhausted
 };
 
 /// Static, allocation-free description of a status code.

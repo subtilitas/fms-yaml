@@ -18,8 +18,8 @@ inline constexpr StateId   kNoState   = 0xFFFFu;
 inline constexpr TriggerId kNoTrigger = 0xFFFFu;
 
 using Name    = etl::string<limits::kMaxNameLength>;
-using Topic   = etl::string<limits::kMaxTopicLength>;
-using Payload = etl::string<limits::kMaxPayloadLength>;
+using Channel = etl::string<limits::kMaxChannelLength>;
+using Message = etl::string<limits::kMaxMessageLength>;
 
 using StringView = etl::string_view;
 
@@ -40,8 +40,8 @@ bool assign_checked(TString& destination, StringView source) noexcept {
   return true;
 }
 
-/// Appends as much as fits.  Used only for building diagnostic payloads, where
-/// a clipped message is better than no message.
+/// Appends as much as fits.  Used for diagnostic text, where a clipped message
+/// beats no message.
 template <typename TString>
 void append_clipped(TString& destination, StringView source) noexcept {
   const std::size_t room = destination.max_size() - destination.size();

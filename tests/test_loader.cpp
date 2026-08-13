@@ -25,14 +25,14 @@ constexpr const char* kMinimal = R"(
 fsm:
   name: minimal
   initial: standing
-mqtt:
-  client_id: "test"
-  qos: 1
-  state_topic: "car/state"
-  error_topic: "car/error"
+io:
+  state_channel: "car/state"
+  error_channel: "car/error"
+  endpoint: "tcp://localhost:1883"
+  identity: "test"
 triggers:
-  - {name: throttle, topic: "car/engine/throttle"}
-  - {name: brake,    topic: "car/brakes/pressed"}
+  - {name: throttle, channel: "car/engine/throttle"}
+  - {name: brake,    channel: "car/brakes/pressed"}
 states:
   - name: standing
     transitions:
@@ -64,17 +64,50 @@ TEST_CASE("a valid document produces a validated model") {
   CHECK(fixture.model.target_of(standing, brake) == fms::kNoState);
   CHECK(fixture.model.target_of(driving, brake) == standing);
 
-  CHECK(std::strcmp(fixture.model.mqtt().client_id.c_str(), "test") == 0);
-  CHECK(fixture.model.mqtt().qos == 1);
+  CHECK(std::strcmp(fixture.model.io().state_channel.c_str(), "car/state") == 0);
+  CHECK(std::strcmp(fixture.model.io().error_channel.c_str(), "car/error") == 0);
+  CHECK(std::strcmp(fixture.model.io().endpoint.c_str(), "tcp://localhost:1883") == 0);
+  CHECK(std::strcmp(fixture.model.io().identity.c_str(), "test") == 0);
 }
 
-TEST_CASE("topics route back to their trigger") {
+TEST_CASE("channels route back to their trigger") {
   Loaded fixture;
   REQUIRE(fixture.load(kMinimal) == fms::Status::Ok);
 
-  CHECK(fixture.model.find_trigger_for_topic(sv("car/brakes/pressed")) ==
+  CHECK(fixture.model.find_trigger_for_channel(sv("car/brakes/pressed")) ==
         fixture.model.find_trigger(sv("brake")));
-  CHECK(fixture.model.find_trigger_for_topic(sv("car/nothing")) == fms::kNoTrigger);
+  CHECK(fixture.model.find_trigger_for_channel(sv("car/nothing")) == fms::kNoTrigger);
+}
+
+TEST_CASE("a trigger without a channel listens on its own name") {
+  Loaded fixture;
+  REQUIRE(fixture.load(R"(
+fsm: {initial: a}
+triggers:
+  - {name: go}
+  - {name: stop, channel: "bus/stop"}
+states:
+  - name: a
+    transitions: {go: b, stop: a}
+  - name: b
+)") == fms::Status::Ok);
+
+  CHECK(fixture.model.find_trigger_for_channel(sv("go")) ==
+        fixture.model.find_trigger(sv("go")));
+  CHECK(fixture.model.find_trigger_for_channel(sv("bus/stop")) ==
+        fixture.model.find_trigger(sv("stop")));
+  CHECK(fixture.model.find_trigger_for_channel(sv("stop")) == fms::kNoTrigger);
+}
+
+TEST_CASE("two triggers may not share a channel") {
+  Loaded fixture;
+  CHECK(fixture.load(R"(
+fsm: {initial: a}
+triggers:
+  - {name: one, channel: "bus/x"}
+  - {name: two, channel: "bus/x"}
+states: [{name: a}]
+)") == fms::Status::DuplicateName);
 }
 
 TEST_CASE("malformed YAML comes back as ParseError, not as an exception") {
@@ -90,7 +123,7 @@ TEST_CASE("dangling references are caught at load time") {
   SUBCASE("unknown target state") {
     CHECK(fixture.load(R"(
 fsm: {initial: a}
-triggers: [{name: t, topic: "x"}]
+triggers: [{name: t}]
 states:
   - name: a
     transitions: {t: nowhere}
@@ -100,7 +133,7 @@ states:
   SUBCASE("unknown trigger") {
     CHECK(fixture.load(R"(
 fsm: {initial: a}
-triggers: [{name: t, topic: "x"}]
+triggers: [{name: t}]
 states:
   - name: a
     transitions: {other: a}
@@ -110,7 +143,7 @@ states:
   SUBCASE("unknown initial state") {
     CHECK(fixture.load(R"(
 fsm: {initial: ghost}
-triggers: [{name: t, topic: "x"}]
+triggers: [{name: t}]
 states: [{name: a}]
 )") == fms::Status::UnknownState);
   }
@@ -127,11 +160,11 @@ TEST_CASE("schema violations are reported") {
   Loaded fixture;
 
   SUBCASE("no states") {
-    CHECK(fixture.load("fsm: {initial: a}\ntriggers: [{name: t, topic: x}]\n") ==
+    CHECK(fixture.load("fsm: {initial: a}\ntriggers: [{name: t}]\n") ==
           fms::Status::SchemaError);
   }
   SUBCASE("no initial") {
-    CHECK(fixture.load("fsm: {name: x}\ntriggers: [{name: t, topic: x}]\nstates: [{name: a}]") ==
+    CHECK(fixture.load("fsm: {name: x}\ntriggers: [{name: t}]\nstates: [{name: a}]") ==
           fms::Status::SchemaError);
   }
   SUBCASE("no triggers") {
@@ -140,17 +173,17 @@ TEST_CASE("schema violations are reported") {
   SUBCASE("transitions is a sequence instead of a mapping") {
     CHECK(fixture.load(R"(
 fsm: {initial: a}
-triggers: [{name: t, topic: "x"}]
+triggers: [{name: t}]
 states:
   - name: a
     transitions: [t, a]
 )") == fms::Status::SchemaError);
   }
-  SUBCASE("qos out of range") {
+  SUBCASE("io is a sequence instead of a mapping") {
     CHECK(fixture.load(R"(
 fsm: {initial: a}
-mqtt: {qos: 7}
-triggers: [{name: t, topic: "x"}]
+io: [state_channel, car/state]
+triggers: [{name: t}]
 states: [{name: a}]
 )") == fms::Status::SchemaError);
   }
@@ -164,7 +197,7 @@ TEST_CASE("oversized names are rejected rather than silently truncated") {
   long_name[sizeof(long_name) - 1] = '\0';
 
   std::snprintf(yaml, sizeof(yaml),
-                "fsm: {initial: %s}\ntriggers: [{name: t, topic: \"x\"}]\nstates: [{name: %s}]\n",
+                "fsm: {initial: %s}\ntriggers: [{name: t}]\nstates: [{name: %s}]\n",
                 long_name, long_name);
   CHECK(fixture.load(yaml) == fms::Status::NameTooLong);
 }

@@ -19,7 +19,7 @@ namespace fms::config {
 /// Where and why a load failed.
 struct Diagnostics {
   Status  status = Status::Ok;
-  Payload message{};   ///< fixed capacity, never allocates
+  Message message{};   ///< fixed capacity, never allocates
   int     line   = -1; ///< YAML line, when one was reported
 
   void reset() noexcept {

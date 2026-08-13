@@ -1,13 +1,13 @@
 // SPDX-License-Identifier: MIT
 //
-// Topic -> trigger -> state change -> publication, and the error feedback for
-// a trigger the current state does not accept.  Uses LoopbackTransport, so no
-// broker is involved.
+// Channel -> trigger -> state change -> publication, and the error feedback for
+// a trigger the current state does not accept.  Uses MemoryPort, so no I/O is
+// involved.
 #include <doctest/doctest.h>
 
 #include <cstring>
 
-#include "fms/mqtt/loopback_transport.hpp"
+#include "fms/port/memory_port.hpp"
 #include "fms/runtime.hpp"
 #include "fms/yaml_loader.hpp"
 
@@ -29,16 +29,13 @@ constexpr const char* kConfig = R"(
 fsm:
   name: car
   initial: standing
-mqtt:
-  client_id: "loopback"
-  qos: 0
-  state_topic: "car/state"
-  error_topic: "car/error"
-  retain_state: true
+io:
+  state_channel: "car/state"
+  error_channel: "car/error"
 triggers:
-  - {name: throttle_pressed, topic: "car/engine/throttle_pressed"}
-  - {name: brake_pressed,    topic: "car/brakes/pressed"}
-  - {name: vehicle_stopped,  topic: "car/wheels/stopped"}
+  - {name: throttle_pressed}
+  - {name: brake_pressed, channel: "car/brakes/pressed"}
+  - {name: vehicle_stopped}
 states:
   - name: standing
     transitions:
@@ -55,7 +52,7 @@ struct Harness {
   fms::Model               model;
   fms::StateMachine        machine;
   fms::Runtime             runtime;
-  fms::mqtt::LoopbackTransport<> transport;
+  fms::port::MemoryPort<>  port;
   fms::config::Diagnostics diagnostics;
 
   Harness() {
@@ -67,78 +64,92 @@ struct Harness {
     REQUIRE(loaded == fms::Status::Ok);
 
     REQUIRE(machine.init(model) == fms::Status::Ok);
-    REQUIRE(runtime.init(model, machine, transport) == fms::Status::Ok);
+    REQUIRE(runtime.init(model, machine, port) == fms::Status::Ok);
     runtime.set_trace(&trace, nullptr);
     REQUIRE(runtime.start() == fms::Status::Ok);
   }
 
-  void deliver(const char* topic) {
-    REQUIRE(transport.inject(sv(topic)) == fms::Status::Ok);
+  void deliver(const char* channel) {
+    REQUIRE(port.inject(sv(channel)) == fms::Status::Ok);
     REQUIRE(runtime.service(0) == fms::Status::Ok);
   }
 };
 
 }  // namespace
 
-TEST_CASE("start subscribes to every trigger topic and publishes the initial state") {
+TEST_CASE("start opens the port, announces every channel and publishes the initial state") {
   Harness h;
-  CHECK(h.transport.subscriptions().size() == 3);
-  CHECK(h.transport.connected());
-  CHECK(h.transport.last_published_on(sv("car/state")) == sv("standing"));
+  CHECK(h.port.is_open());
+  CHECK(h.port.listening().size() == 3);
+  CHECK(h.port.last_state() == sv("standing"));
 }
 
-TEST_CASE("a message on a trigger topic changes the state and publishes it") {
+TEST_CASE("a trigger without an explicit channel listens on its own name") {
+  Harness h;
+  CHECK(h.model.find_trigger_for_channel(sv("throttle_pressed")) ==
+        h.model.find_trigger(sv("throttle_pressed")));
+  // ...and one with an explicit channel listens only there.
+  CHECK(h.model.find_trigger_for_channel(sv("car/brakes/pressed")) ==
+        h.model.find_trigger(sv("brake_pressed")));
+  CHECK(h.model.find_trigger_for_channel(sv("brake_pressed")) == fms::kNoTrigger);
+}
+
+TEST_CASE("input on a trigger channel changes the state and publishes it") {
   Harness h;
 
-  h.deliver("car/engine/throttle_pressed");
+  h.deliver("throttle_pressed");
   CHECK(std::strcmp(h.machine.current_name(), "accelerating") == 0);
-  CHECK(h.transport.last_published_on(sv("car/state")) == sv("accelerating"));
+  CHECK(h.port.last_state() == sv("accelerating"));
 
   h.deliver("car/brakes/pressed");
   CHECK(std::strcmp(h.machine.current_name(), "braking") == 0);
-  CHECK(h.transport.last_published_on(sv("car/state")) == sv("braking"));
+  CHECK(h.port.last_state() == sv("braking"));
 
-  h.deliver("car/wheels/stopped");
+  h.deliver("vehicle_stopped");
   CHECK(std::strcmp(h.machine.current_name(), "standing") == 0);
   CHECK(h.machine.transition_count() == 3);
+  CHECK(h.port.errors().empty());
 }
 
-TEST_CASE("a trigger the current state does not accept is reported on the error topic") {
+TEST_CASE("a trigger the current state does not accept is reported as an error") {
   Harness h;
-  h.transport.clear_published();
+  h.port.clear_history();
 
   h.deliver("car/brakes/pressed");  // the car is standing
 
   CHECK(std::strcmp(h.machine.current_name(), "standing") == 0);
   CHECK(h.machine.rejection_count() == 1);
-  CHECK(h.transport.last_published_on(sv("car/error")) ==
-        sv("rejected: brake_pressed in state standing"));
-  // Nothing was published on the state topic: the state did not change.
-  CHECK(h.transport.last_published_on(sv("car/state")).empty());
+  CHECK(h.port.last_error_message() == sv("rejected: brake_pressed in state standing"));
+  CHECK(h.port.states().empty());  // the state did not change, so nothing was published
 }
 
-TEST_CASE("a message on an unknown topic is counted and ignored") {
+TEST_CASE("input on an unknown channel is counted and reported") {
   Harness h;
-  h.deliver("car/radio/volume");
+  h.deliver("radio_volume");
 
-  CHECK(h.runtime.messages_received() == 1);
-  CHECK(h.runtime.messages_unrouted() == 1);
+  CHECK(h.runtime.inputs_received() == 1);
+  CHECK(h.runtime.inputs_unrouted() == 1);
   CHECK(h.machine.rejection_count() == 0);
+  CHECK(h.port.last_error_message() == sv("unknown channel: radio_volume"));
   CHECK(std::strcmp(h.machine.current_name(), "standing") == 0);
 }
 
-TEST_CASE("the payload is not part of the decision") {
+TEST_CASE("an idle port is not an error") {
   Harness h;
-  REQUIRE(h.transport.inject(sv("car/engine/throttle_pressed"), sv("anything at all")) ==
-          fms::Status::Ok);
-  REQUIRE(h.runtime.service(0) == fms::Status::Ok);
-  CHECK(std::strcmp(h.machine.current_name(), "accelerating") == 0);
+  CHECK(h.runtime.service(0) == fms::Status::Ok);  // nothing queued -> Timeout inside
+  CHECK(h.runtime.inputs_received() == 0);
+}
+
+TEST_CASE("an exhausted port ends the loop") {
+  Harness h;
+  h.port.set_end_of_input();
+  CHECK(h.runtime.service(0) == fms::Status::EndOfInput);
 }
 
 TEST_CASE("the trace hook sees accepted and rejected triggers alike") {
   Harness h;
-  h.deliver("car/engine/throttle_pressed");  // accepted
-  h.deliver("car/wheels/stopped");           // rejected while accelerating
+  h.deliver("throttle_pressed");  // accepted
+  h.deliver("vehicle_stopped");   // rejected while accelerating
 
   CHECK(g_traced == 2);
   CHECK(g_rejected == 1);
@@ -153,8 +164,8 @@ TEST_CASE("application code can raise a trigger by name") {
   CHECK(h.runtime.fire_by_name(sv("horn")) == fms::Status::UnknownTrigger);
 }
 
-TEST_CASE("stop disconnects") {
+TEST_CASE("stop closes the port") {
   Harness h;
   REQUIRE(h.runtime.stop() == fms::Status::Ok);
-  CHECK_FALSE(h.transport.connected());
+  CHECK_FALSE(h.port.is_open());
 }

@@ -2,14 +2,14 @@
 //
 // The machine description, built once from YAML and then read-only.
 //
-//   states_        flat_map<StateId, StateNode>        a state and its dependencies
+//   states_        flat_map<StateId, StateNode>      a state and its dependencies
 //   StateNode
 //     .name        Name
-//     .transitions flat_map<TriggerId, StateId>        trigger -> next state
-//   state_index_   flat_map<Name, StateId>             name resolution (load time)
-//   triggers_      flat_map<TriggerId, TriggerDef>     a trigger and its dependencies
+//     .transitions flat_map<TriggerId, StateId>      trigger -> next state
+//   state_index_   flat_map<Name, StateId>           name resolution (load time)
+//   triggers_      flat_map<TriggerId, TriggerDef>   a trigger and its dependencies
 //   trigger_index_ flat_map<Name, TriggerId>
-//   topic_index_   flat_map<Topic, TriggerId>          inbound MQTT routing
+//   channel_index_ flat_map<Channel, TriggerId>      inbound routing
 //
 // A trigger maps to exactly one target state per state, so every table is a
 // plain flat_map: a sorted vector plus a pool, binary-search lookup, no nodes,
@@ -25,11 +25,11 @@
 
 namespace fms {
 
-/// A trigger and its dependencies: the name transitions refer to, and the MQTT
-/// topic a subsystem publishes on to raise it.
+/// A trigger and its dependencies: the name transitions refer to, and the
+/// channel a port delivers it on.  The channel defaults to the name.
 struct TriggerDef {
-  Name  name{};
-  Topic topic{};
+  Name    name{};
+  Channel channel{};
 };
 
 /// A state and its dependencies: its name and its outgoing transitions.
@@ -40,18 +40,13 @@ struct StateNode {
   TransitionMap transitions{};
 };
 
-/// Broker settings, also read from the YAML file.
-struct MqttConfig {
-  Topic         broker{"tcp://localhost:1883"};
-  Name          client_id{"fms"};
-  std::uint16_t keep_alive_s      = 30;
-  bool          clean_session     = true;
-  std::uint8_t  qos               = 1;
-  std::uint32_t connect_timeout_ms = 5000;
-
-  Topic state_topic{};   ///< the new state name is published here on every change
-  Topic error_topic{};   ///< rejected triggers are reported here
-  bool  retain_state = true;
+/// Where the machine talks, and how to reach the world.  Every field is opaque
+/// to the core - it is the port that decides what an endpoint string means.
+struct IoConfig {
+  Channel state_channel{};  ///< the new state's name is published here on every change
+  Channel error_channel{};  ///< rejected triggers are reported here
+  Channel endpoint{};       ///< broker URI, device path, socket - port specific
+  Name    identity{};       ///< client id, node name - port specific
 };
 
 class Model {
@@ -60,7 +55,7 @@ class Model {
   using StateIndex   = etl::flat_map<Name, StateId, limits::kMaxStates>;
   using TriggerMap   = etl::flat_map<TriggerId, TriggerDef, limits::kMaxTriggers>;
   using TriggerIndex = etl::flat_map<Name, TriggerId, limits::kMaxTriggers>;
-  using TopicIndex   = etl::flat_map<Topic, TriggerId, limits::kMaxTriggers>;
+  using ChannelIndex = etl::flat_map<Channel, TriggerId, limits::kMaxTriggers>;
 
   Model() noexcept = default;
 
@@ -72,24 +67,26 @@ class Model {
   void   clear() noexcept;
   Status set_name(StringView name) noexcept;
   Status declare_state(StringView name, StateId& out_id) noexcept;
-  Status declare_trigger(StringView name, StringView topic, TriggerId& out_id) noexcept;
+
+  /// An empty `channel` defaults to `name`.
+  Status declare_trigger(StringView name, StringView channel, TriggerId& out_id) noexcept;
   Status add_transition(StateId from, TriggerId trigger, StateId target) noexcept;
   Status set_initial(StateId id) noexcept;
 
   /// Cross-checks every reference.  Called at the end of loading.
   Status validate() const noexcept;
 
-  MqttConfig& mutable_mqtt() noexcept { return mqtt_; }
+  IoConfig& mutable_io() noexcept { return io_; }
 
   // ---- read-only run-time interface --------------------------------------
 
   const Name& name() const noexcept { return name_; }
   StateId     initial() const noexcept { return initial_; }
 
-  const StateMap&   states() const noexcept { return states_; }
-  const TriggerMap& triggers() const noexcept { return triggers_; }
-  const TopicIndex& topic_index() const noexcept { return topic_index_; }
-  const MqttConfig& mqtt() const noexcept { return mqtt_; }
+  const StateMap&     states() const noexcept { return states_; }
+  const TriggerMap&   triggers() const noexcept { return triggers_; }
+  const ChannelIndex& channel_index() const noexcept { return channel_index_; }
+  const IoConfig&     io() const noexcept { return io_; }
 
   bool              has_state(StateId id) const noexcept;
   const StateNode*  state(StateId id) const noexcept;
@@ -97,7 +94,7 @@ class Model {
 
   StateId   find_state(StringView name) const noexcept;
   TriggerId find_trigger(StringView name) const noexcept;
-  TriggerId find_trigger_for_topic(StringView topic) const noexcept;
+  TriggerId find_trigger_for_channel(StringView channel) const noexcept;
 
   /// Name of a state / trigger, or "<invalid>".  Never allocates.
   const char* state_name(StateId id) const noexcept;
@@ -111,15 +108,15 @@ class Model {
   std::size_t trigger_count() const noexcept { return triggers_.size(); }
 
  private:
-  Name       name_{};
-  StateId    initial_ = kNoState;
-  MqttConfig mqtt_{};
+  Name     name_{};
+  StateId  initial_ = kNoState;
+  IoConfig io_{};
 
   StateMap     states_{};
   StateIndex   state_index_{};
   TriggerMap   triggers_{};
   TriggerIndex trigger_index_{};
-  TopicIndex   topic_index_{};
+  ChannelIndex channel_index_{};
 };
 
 }  // namespace fms

@@ -3,7 +3,7 @@
 // Compile-time capacities.  The whole machine is sized from these numbers, so
 // it is one fixed object with a footprint known at build time.  Override them
 // from the build system, e.g.
-//     target_compile_definitions(app PRIVATE FMS_MAX_STATES=64)
+//     target_compile_definitions(app PRIVATE FMS_MAX_STATES=8)
 #ifndef FMS_LIMITS_HPP
 #define FMS_LIMITS_HPP
 
@@ -25,22 +25,24 @@
 #define FMS_MAX_NAME_LENGTH 31
 #endif
 
-#ifndef FMS_MAX_TOPIC_LENGTH
-#define FMS_MAX_TOPIC_LENGTH 95
+// A channel is whatever address the port uses: an MQTT topic, a CAN id, a word
+// typed on stdin.  The core never interprets it.
+#ifndef FMS_MAX_CHANNEL_LENGTH
+#define FMS_MAX_CHANNEL_LENGTH 95
 #endif
 
-#ifndef FMS_MAX_PAYLOAD_LENGTH
-#define FMS_MAX_PAYLOAD_LENGTH 127
+#ifndef FMS_MAX_MESSAGE_LENGTH
+#define FMS_MAX_MESSAGE_LENGTH 127
 #endif
 
 namespace fms::limits {
 
-inline constexpr std::size_t kMaxStates             = FMS_MAX_STATES;
-inline constexpr std::size_t kMaxTriggers           = FMS_MAX_TRIGGERS;
+inline constexpr std::size_t kMaxStates              = FMS_MAX_STATES;
+inline constexpr std::size_t kMaxTriggers            = FMS_MAX_TRIGGERS;
 inline constexpr std::size_t kMaxTransitionsPerState = FMS_MAX_TRANSITIONS_PER_STATE;
-inline constexpr std::size_t kMaxNameLength         = FMS_MAX_NAME_LENGTH;
-inline constexpr std::size_t kMaxTopicLength        = FMS_MAX_TOPIC_LENGTH;
-inline constexpr std::size_t kMaxPayloadLength      = FMS_MAX_PAYLOAD_LENGTH;
+inline constexpr std::size_t kMaxNameLength          = FMS_MAX_NAME_LENGTH;
+inline constexpr std::size_t kMaxChannelLength       = FMS_MAX_CHANNEL_LENGTH;
+inline constexpr std::size_t kMaxMessageLength       = FMS_MAX_MESSAGE_LENGTH;
 
 }  // namespace fms::limits
 

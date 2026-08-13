@@ -1,13 +1,13 @@
 cmake_minimum_required(VERSION 3.20)
-project(fms_yaml VERSION 0.1.0 LANGUAGES CXX)
+project(fms_yaml VERSION 0.2.0 LANGUAGES CXX)
 
 # ---------------------------------------------------------------------------
 # Options
 # ---------------------------------------------------------------------------
-option(FMS_BUILD_TESTS      "Build unit tests"                      ON)
-option(FMS_BUILD_EXAMPLES   "Build the example applications"        ON)
-option(FMS_WITH_PAHO        "Build the paho MQTT transport"         ON)
-option(FMS_FETCH_DEPS       "Download dependencies with FetchContent" ON)
+option(FMS_BUILD_TESTS    "Build unit tests"                        ON)
+option(FMS_BUILD_EXAMPLES "Build the example applications"          ON)
+option(FMS_BUILD_CONSOLE  "Build the std::cin/std::cout port"       ON)
+option(FMS_FETCH_DEPS     "Download dependencies with FetchContent" ON)
 
 set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
@@ -51,23 +51,14 @@ function(fms_warnings target)
   endif()
 endfunction()
 
-# Same, minus -Wpedantic: for targets that include third-party C headers
-# (paho's MQTTProperties.h uses an anonymous struct).
-function(fms_warnings_relaxed target)
-  if(MSVC)
-    target_compile_options(${target} PRIVATE /W4)
-  else()
-    target_compile_options(${target} PRIVATE -Wall -Wextra -Wshadow)
-  endif()
-endfunction()
-
 # ---------------------------------------------------------------------------
-# Dependencies
+# Dependencies: ETL for the containers, yaml-cpp for the config, doctest for
+# the tests.  Nothing else - the core has no transport dependency at all.
 # ---------------------------------------------------------------------------
 include(FetchContent)
 
-# yaml-cpp 0.8.0 and paho.mqtt.c 1.3.x still declare cmake_minimum_required(3.4),
-# which CMake 4 refuses outright.  Ask CMake to keep the old floor for them.
+# yaml-cpp 0.8.0 still declares cmake_minimum_required(3.4), which CMake 4
+# refuses outright.  Ask CMake to keep the old floor for it.
 if(CMAKE_VERSION VERSION_GREATER_EQUAL 4.0 AND NOT DEFINED CMAKE_POLICY_VERSION_MINIMUM)
   set(CMAKE_POLICY_VERSION_MINIMUM 3.5)
 endif()
@@ -99,39 +90,9 @@ else()
   find_package(yaml-cpp REQUIRED)
 endif()
 
-# --- paho.mqtt.c ------------------------------------------------------------
-set(FMS_PAHO_TARGET "")
-if(FMS_WITH_PAHO)
-  if(FMS_FETCH_DEPS)
-    set(PAHO_BUILD_STATIC   ON  CACHE BOOL "" FORCE)
-    set(PAHO_BUILD_SHARED   OFF CACHE BOOL "" FORCE)
-    set(PAHO_WITH_SSL       OFF CACHE BOOL "" FORCE)
-    set(PAHO_BUILD_SAMPLES  OFF CACHE BOOL "" FORCE)
-    set(PAHO_BUILD_DOCUMENTATION OFF CACHE BOOL "" FORCE)
-    set(PAHO_ENABLE_TESTING OFF CACHE BOOL "" FORCE)
-    FetchContent_Declare(paho
-      GIT_REPOSITORY https://github.com/eclipse/paho.mqtt.c.git
-      GIT_TAG        v1.3.13
-      GIT_SHALLOW    TRUE)
-    FetchContent_MakeAvailable(paho)
-  else()
-    find_package(eclipse-paho-mqtt-c REQUIRED)
-  endif()
-
-  if(TARGET eclipse-paho-mqtt-c::paho-mqtt3c-static)
-    set(FMS_PAHO_TARGET eclipse-paho-mqtt-c::paho-mqtt3c-static)
-  elseif(TARGET paho-mqtt3c-static)
-    set(FMS_PAHO_TARGET paho-mqtt3c-static)
-  elseif(TARGET eclipse-paho-mqtt-c::paho-mqtt3c)
-    set(FMS_PAHO_TARGET eclipse-paho-mqtt-c::paho-mqtt3c)
-  else()
-    message(WARNING "paho.mqtt.c target not found - disabling the paho transport")
-    set(FMS_WITH_PAHO OFF)
-  endif()
-endif()
-
 # ---------------------------------------------------------------------------
-# fms_core : the state machine itself.  No exceptions, no heap after setup.
+# fms_core : the state machine itself.  No exceptions, no heap after setup,
+# no transport.  fms::IPort is an interface with no implementation here.
 # ---------------------------------------------------------------------------
 add_library(fms_core STATIC
   src/status.cpp
@@ -162,15 +123,15 @@ fms_enable_exceptions(fms_config)
 fms_warnings(fms_config)
 
 # ---------------------------------------------------------------------------
-# fms_paho : paho.mqtt.c binding for fms::mqtt::ITransport.
+# fms_console : an fms::IPort over std::cin / std::cout.  Separate target
+# because it pulls in <iostream>, which a firmware build does not want.
 # ---------------------------------------------------------------------------
-if(FMS_WITH_PAHO)
-  add_library(fms_paho STATIC src/mqtt/paho_transport.cpp)
-  add_library(fms::paho ALIAS fms_paho)
-  target_link_libraries(fms_paho PUBLIC fms_core PRIVATE ${FMS_PAHO_TARGET})
-  target_compile_definitions(fms_paho PUBLIC FMS_WITH_PAHO=1)
-  fms_disable_exceptions(fms_paho)
-  fms_warnings_relaxed(fms_paho)
+if(FMS_BUILD_CONSOLE)
+  add_library(fms_console STATIC src/port/console_port.cpp)
+  add_library(fms::console ALIAS fms_console)
+  target_link_libraries(fms_console PUBLIC fms_core)
+  fms_disable_exceptions(fms_console)
+  fms_warnings(fms_console)
 endif()
 
 # ---------------------------------------------------------------------------
@@ -185,18 +146,15 @@ fms_warnings(fms_alloc_guard)
 # ---------------------------------------------------------------------------
 # Examples
 # ---------------------------------------------------------------------------
-if(FMS_BUILD_EXAMPLES)
-  add_executable(car_ecu examples/car/main.cpp)
-  target_link_libraries(car_ecu PRIVATE fms_core fms_config)
-  if(FMS_WITH_PAHO)
-    target_link_libraries(car_ecu PRIVATE fms_paho)
-  endif()
-  fms_disable_exceptions(car_ecu)
-  fms_warnings(car_ecu)
-  add_custom_command(TARGET car_ecu POST_BUILD
+if(FMS_BUILD_EXAMPLES AND FMS_BUILD_CONSOLE)
+  add_executable(car_console examples/car/main.cpp)
+  target_link_libraries(car_console PRIVATE fms_core fms_config fms_console)
+  fms_disable_exceptions(car_console)
+  fms_warnings(car_console)
+  add_custom_command(TARGET car_console POST_BUILD
     COMMAND ${CMAKE_COMMAND} -E copy_if_different
             ${CMAKE_CURRENT_SOURCE_DIR}/examples/car/car.yaml
-            $<TARGET_FILE_DIR:car_ecu>/car.yaml)
+            $<TARGET_FILE_DIR:car_console>/car.yaml)
 endif()
 
 # ---------------------------------------------------------------------------
@@ -227,4 +185,16 @@ if(FMS_BUILD_TESTS)
     FMS_SOURCE_DIR="${CMAKE_CURRENT_SOURCE_DIR}")
   fms_warnings(fms_tests)   # tests keep exceptions: doctest needs them
   add_test(NAME fms_tests COMMAND fms_tests)
+
+  # The console example is exercised through a pipe, which also proves the
+  # port works with redirected stdin.
+  if(FMS_BUILD_EXAMPLES AND FMS_BUILD_CONSOLE)
+    add_test(NAME car_console_pipe
+      COMMAND ${CMAKE_COMMAND}
+              -DEXE=$<TARGET_FILE:car_console>
+              -DCONFIG=${CMAKE_CURRENT_SOURCE_DIR}/examples/car/car.yaml
+              -DSCRIPT=${CMAKE_CURRENT_SOURCE_DIR}/tests/car_session.txt
+              -DEXPECTED=${CMAKE_CURRENT_SOURCE_DIR}/tests/car_session.expected
+              -P ${CMAKE_CURRENT_SOURCE_DIR}/tests/run_console_test.cmake)
+  endif()
 endif()

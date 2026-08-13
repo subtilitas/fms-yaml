@@ -1,0 +1,8 @@
+state: power_off
+state: self_test
+state: standing
+state: accelerating
+state: braking
+state: standing
+state: fault
+state: power_off

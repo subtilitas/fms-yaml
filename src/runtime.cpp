@@ -10,15 +10,13 @@ StringView cstr(const char* text) noexcept { return StringView(text, std::strlen
 
 }  // namespace
 
-Status Runtime::init(const Model& model, StateMachine& machine,
-                     mqtt::ITransport& transport) noexcept {
+Status Runtime::init(const Model& model, StateMachine& machine, IPort& port) noexcept {
   if (started_) {
     return Status::AlreadyInitialised;
   }
-  model_     = &model;
-  machine_   = &machine;
-  transport_ = &transport;
-  transport_->set_handler(&Runtime::on_message_thunk, this);
+  model_   = &model;
+  machine_ = &machine;
+  port_    = &port;
   return Status::Ok;
 }
 
@@ -28,22 +26,22 @@ void Runtime::set_trace(TraceFn trace, void* user) noexcept {
 }
 
 Status Runtime::start() noexcept {
-  if (model_ == nullptr || machine_ == nullptr || transport_ == nullptr) {
+  if (model_ == nullptr || machine_ == nullptr || port_ == nullptr) {
     return Status::NotInitialised;
   }
   if (started_) {
     return Status::AlreadyInitialised;
   }
 
-  const Status connected = transport_->connect();
-  if (!is_ok(connected)) {
-    return connected;
+  const Status opened = port_->open();
+  if (!is_ok(opened)) {
+    return opened;
   }
 
-  for (const auto& entry : model_->topic_index()) {
-    const Status subscribed = transport_->subscribe(view(entry.first), model_->mqtt().qos);
-    if (!is_ok(subscribed)) {
-      return subscribed;
+  for (const auto& entry : model_->channel_index()) {
+    const Status listening = port_->listen(view(entry.first));
+    if (!is_ok(listening)) {
+      return listening;
     }
   }
 
@@ -57,23 +55,40 @@ Status Runtime::start() noexcept {
   return Status::Ok;
 }
 
-Status Runtime::service(std::uint32_t poll_timeout_ms) noexcept {
+Status Runtime::service(std::uint32_t timeout_ms) noexcept {
   if (!started_) {
     return Status::NotInitialised;
   }
-  const Status polled = transport_->poll(poll_timeout_ms);
-  if (!is_ok(polled) && polled != Status::Timeout) {
-    return polled;
+
+  StringView   channel;
+  const Status received = port_->receive(channel, timeout_ms);
+  if (received == Status::Timeout) {
+    return Status::Ok;  // idle, not an error
   }
+  if (!is_ok(received)) {
+    return received;    // EndOfInput or a real failure
+  }
+
+  ++inputs_received_;
+
+  // One channel per trigger: routing is a single lookup.
+  const TriggerId trigger = model_->find_trigger_for_channel(channel);
+  if (trigger == kNoTrigger) {
+    ++inputs_unrouted_;
+    publish_unknown(channel);
+    return Status::Ok;
+  }
+
+  dispatch(trigger);
   return Status::Ok;
 }
 
 Status Runtime::stop() noexcept {
-  if (transport_ == nullptr) {
+  if (port_ == nullptr) {
     return Status::NotInitialised;
   }
   started_ = false;
-  return transport_->disconnect();
+  return port_->close();
 }
 
 Status Runtime::fire_by_name(StringView trigger_name) noexcept {
@@ -90,23 +105,6 @@ Status Runtime::fire_by_name(StringView trigger_name) noexcept {
 // ---------------------------------------------------------------------------
 // internals
 // ---------------------------------------------------------------------------
-
-void Runtime::on_message_thunk(void* user, const mqtt::InboundMessage& message) noexcept {
-  static_cast<Runtime*>(user)->on_message(message);
-}
-
-void Runtime::on_message(const mqtt::InboundMessage& message) noexcept {
-  ++messages_received_;
-
-  // One topic per trigger: routing is a single lookup, and the payload is not
-  // part of the decision.
-  const TriggerId trigger = model_->find_trigger_for_topic(message.topic);
-  if (trigger == kNoTrigger) {
-    ++messages_unrouted_;
-    return;
-  }
-  dispatch(trigger);
-}
 
 Status Runtime::dispatch(TriggerId trigger) noexcept {
   TransitionEvent event;
@@ -125,31 +123,27 @@ Status Runtime::dispatch(TriggerId trigger) noexcept {
 }
 
 void Runtime::publish_state(StateId state) noexcept {
-  const MqttConfig& mqtt = model_->mqtt();
-  if (mqtt.state_topic.empty()) {
-    return;
-  }
   const StateNode* node = model_->state(state);
-  if (node == nullptr) {
-    return;
+  if (node != nullptr) {
+    port_->publish_state(view(node->name));
   }
-  transport_->publish(view(mqtt.state_topic), view(node->name), mqtt.qos, mqtt.retain_state);
 }
 
 void Runtime::publish_rejection(StateId state, TriggerId trigger) noexcept {
-  const MqttConfig& mqtt = model_->mqtt();
-  if (mqtt.error_topic.empty()) {
-    return;
-  }
-
   // "rejected: <trigger> in state <state>" - built in a fixed member buffer.
   scratch_.clear();
   append_clipped(scratch_, cstr("rejected: "));
   append_clipped(scratch_, cstr(model_->trigger_name(trigger)));
   append_clipped(scratch_, cstr(" in state "));
   append_clipped(scratch_, cstr(model_->state_name(state)));
+  port_->publish_error(view(scratch_));
+}
 
-  transport_->publish(view(mqtt.error_topic), view(scratch_), mqtt.qos, /*retain=*/false);
+void Runtime::publish_unknown(StringView channel) noexcept {
+  scratch_.clear();
+  append_clipped(scratch_, cstr("unknown channel: "));
+  append_clipped(scratch_, channel);
+  port_->publish_error(view(scratch_));
 }
 
 }  // namespace fms

@@ -32,15 +32,16 @@ const char* to_string(Status status) noexcept {
     case Status::UnknownState:       return "unknown state";
     case Status::UnknownTrigger:     return "unknown trigger";
     case Status::NameTooLong:        return "name exceeds FMS_MAX_NAME_LENGTH";
-    case Status::TopicTooLong:       return "topic exceeds FMS_MAX_TOPIC_LENGTH";
+    case Status::ChannelTooLong:     return "channel exceeds FMS_MAX_CHANNEL_LENGTH";
     case Status::CapacityExceeded:   return "a compile-time capacity was exceeded";
     case Status::NotInitialised:     return "not initialised";
     case Status::AlreadyInitialised: return "already initialised";
     case Status::InvalidArgument:    return "invalid argument";
     case Status::NoTransition:       return "trigger not accepted in this state";
-    case Status::TransportError:     return "transport error";
-    case Status::NotConnected:       return "not connected";
+    case Status::PortError:          return "port error";
+    case Status::NotOpen:            return "port is not open";
     case Status::Timeout:            return "timeout";
+    case Status::EndOfInput:         return "end of input";
   }
   return "unknown status";
 }

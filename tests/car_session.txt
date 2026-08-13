@@ -1,0 +1,11 @@
+ignition_on
+brake_pressed
+self_test_passed
+throttle_pressed
+vehicle_stopped
+brake_pressed
+vehicle_stopped
+handbrake
+engine_fault
+ignition_off
+quit

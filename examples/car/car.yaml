@@ -1,42 +1,42 @@
 # Car state machine.
 #
 #   power_off --ignition_on--> self_test --passed--> standing
-#   standing  --throttle--> accelerating --release--> coasting --brake--> braking
-#   braking   --wheels stopped--> standing
-#   anything the current state does not list is rejected and reported on
-#   car/error - there are no guards, no actions and no parameters.
+#   standing  --throttle_pressed--> accelerating --throttle_released--> coasting
+#   coasting  --brake_pressed--> braking --vehicle_stopped--> standing
 #
-# Each subsystem owns its topics: the brake controller publishes on
-# car/brakes/..., the engine on car/engine/..., and so on.
+# Anything the current state does not list is rejected and reported.  There are
+# no guards, no actions and no parameters.
+#
+# No 'channel' is given for any trigger, so each one listens on its own name -
+# which is exactly what you type into the console example.  A networked port
+# would add e.g. `channel: "car/brakes/pressed"` to each trigger.
 
 fsm:
   name: car
   initial: power_off
 
-mqtt:
-  broker: "tcp://localhost:1883"
-  client_id: "car-ecu-01"
-  qos: 1
-  state_topic: "car/state"     # every state change is published here
-  error_topic: "car/error"     # rejected triggers are reported here
-  retain_state: true
+io:
+  state_channel: "car/state"   # where the machine announces its state
+  error_channel: "car/error"   # where it reports refused triggers
+  # endpoint / identity are opaque strings for whatever port you plug in;
+  # the console port ignores them.
 
 triggers:
   # ignition switch
-  - {name: ignition_on,      topic: "car/ignition/on"}
-  - {name: ignition_off,     topic: "car/ignition/off"}
+  - {name: ignition_on}
+  - {name: ignition_off}
   # self test unit
-  - {name: self_test_passed, topic: "car/selftest/passed"}
-  - {name: self_test_failed, topic: "car/selftest/failed"}
-  # engine / throttle
-  - {name: throttle_pressed,  topic: "car/engine/throttle_pressed"}
-  - {name: throttle_released, topic: "car/engine/throttle_released"}
-  - {name: engine_fault,      topic: "car/engine/fault"}
+  - {name: self_test_passed}
+  - {name: self_test_failed}
+  # engine
+  - {name: throttle_pressed}
+  - {name: throttle_released}
+  - {name: engine_fault}
   # brake system
-  - {name: brake_pressed,  topic: "car/brakes/pressed"}
-  - {name: brake_released, topic: "car/brakes/released"}
+  - {name: brake_pressed}
+  - {name: brake_released}
   # wheel speed sensors
-  - {name: vehicle_stopped, topic: "car/wheels/stopped"}
+  - {name: vehicle_stopped}
 
 states:
   - name: power_off

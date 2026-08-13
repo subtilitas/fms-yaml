@@ -9,12 +9,12 @@ constexpr const char* kInvalid = "<invalid>";
 void Model::clear() noexcept {
   name_.clear();
   initial_ = kNoState;
-  mqtt_ = MqttConfig{};
+  io_ = IoConfig{};
   states_.clear();
   state_index_.clear();
   triggers_.clear();
   trigger_index_.clear();
-  topic_index_.clear();
+  channel_index_.clear();
 }
 
 Status Model::set_name(StringView name) noexcept {
@@ -50,13 +50,13 @@ Status Model::declare_state(StringView name, StateId& out_id) noexcept {
   return Status::Ok;
 }
 
-Status Model::declare_trigger(StringView name, StringView topic, TriggerId& out_id) noexcept {
+Status Model::declare_trigger(StringView name, StringView channel, TriggerId& out_id) noexcept {
   out_id = kNoTrigger;
 
   if (name.empty()) {
     return Status::InvalidArgument;
   }
-  if (triggers_.full() || trigger_index_.full() || topic_index_.full()) {
+  if (triggers_.full() || trigger_index_.full() || channel_index_.full()) {
     return Status::CapacityExceeded;
   }
 
@@ -64,24 +64,24 @@ Status Model::declare_trigger(StringView name, StringView topic, TriggerId& out_
   if (!assign_checked(def.name, name)) {
     return Status::NameTooLong;
   }
-  if (!assign_checked(def.topic, topic)) {
-    return Status::TopicTooLong;
+  // No channel given: the trigger listens on its own name, which is what a
+  // console or a plain text protocol wants.
+  if (!assign_checked(def.channel, channel.empty() ? name : channel)) {
+    return Status::ChannelTooLong;
   }
   if (trigger_index_.find(def.name) != trigger_index_.end()) {
     return Status::DuplicateName;
   }
-  // One topic per trigger, and one trigger per topic: two subsystems sharing a
-  // topic would make routing ambiguous, so it is rejected here.
-  if (!def.topic.empty() && topic_index_.find(def.topic) != topic_index_.end()) {
+  // One channel per trigger, one trigger per channel: two sources sharing a
+  // channel would make routing ambiguous, so it is rejected here.
+  if (channel_index_.find(def.channel) != channel_index_.end()) {
     return Status::DuplicateName;
   }
 
   const TriggerId id = static_cast<TriggerId>(triggers_.size());
   triggers_.insert(TriggerMap::value_type(id, def));
   trigger_index_.insert(TriggerIndex::value_type(def.name, id));
-  if (!def.topic.empty()) {
-    topic_index_.insert(TopicIndex::value_type(def.topic, id));
-  }
+  channel_index_.insert(ChannelIndex::value_type(def.channel, id));
 
   out_id = id;
   return Status::Ok;
@@ -171,13 +171,13 @@ TriggerId Model::find_trigger(StringView name) const noexcept {
   return (it == trigger_index_.end()) ? kNoTrigger : it->second;
 }
 
-TriggerId Model::find_trigger_for_topic(StringView topic) const noexcept {
-  Topic key;
-  if (!assign_checked(key, topic)) {
+TriggerId Model::find_trigger_for_channel(StringView channel) const noexcept {
+  Channel key;
+  if (!assign_checked(key, channel)) {
     return kNoTrigger;
   }
-  const auto it = topic_index_.find(key);
-  return (it == topic_index_.end()) ? kNoTrigger : it->second;
+  const auto it = channel_index_.find(key);
+  return (it == channel_index_.end()) ? kNoTrigger : it->second;
 }
 
 const char* Model::state_name(StateId id) const noexcept {
