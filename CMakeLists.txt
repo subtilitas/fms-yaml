@@ -154,18 +154,11 @@ if(FMS_BUILD_EXAMPLES AND FMS_BUILD_CONSOLE)
   target_link_libraries(car_console PRIVATE fms_core fms_config fms_console)
   fms_disable_exceptions(car_console)
   fms_warnings(car_console)
-  # Put the configs next to the binary.  configure_file does the copy and, more
-  # importantly, makes CMake re-run when a YAML file changes - a bare POST_BUILD
-  # command would not, and editing the machine file is the commonest edit there
-  # is.  The POST_BUILD copy is for multi-config generators, where the binary
-  # lands in a per-configuration subdirectory.
-  foreach(config car.setup.yaml car.machine.yaml)
-    configure_file(examples/car/${config} ${CMAKE_CURRENT_BINARY_DIR}/${config} COPYONLY)
-    add_custom_command(TARGET car_console POST_BUILD
-      COMMAND ${CMAKE_COMMAND} -E copy_if_different
-              ${CMAKE_CURRENT_SOURCE_DIR}/examples/car/${config}
-              $<TARGET_FILE_DIR:car_console>/${config})
-  endforeach()
+  # Note what is deliberately absent here: nothing copies, reads, validates or
+  # depends on the YAML.  The configuration is a run-time input, so the build
+  # must not have an opinion about it - a machine file the build never opened
+  # cannot be a machine file the build got wrong.  Pass the paths to the binary,
+  # or run it from the directory the files live in.
 endif()
 
 # ---------------------------------------------------------------------------
@@ -202,7 +195,8 @@ if(FMS_BUILD_TESTS)
   add_test(NAME fms_tests COMMAND fms_tests)
 
   # The console example is exercised through a pipe, which also proves the
-  # port works with redirected stdin.
+  # port works with redirected stdin.  The YAML paths are passed to the test
+  # command, so the files are opened when the test runs - not while configuring.
   if(FMS_BUILD_EXAMPLES AND FMS_BUILD_CONSOLE)
     add_test(NAME car_console_pipe
       COMMAND ${CMAKE_COMMAND}
@@ -212,5 +206,12 @@ if(FMS_BUILD_TESTS)
               -DSCRIPT=${CMAKE_CURRENT_SOURCE_DIR}/tests/car_session.txt
               -DEXPECTED=${CMAKE_CURRENT_SOURCE_DIR}/tests/car_session.expected
               -P ${CMAKE_CURRENT_SOURCE_DIR}/tests/run_console_test.cmake)
+
+    # Loading the shipped configuration is itself a test, run by the binary.
+    add_test(NAME car_config_check
+      COMMAND car_console
+              ${CMAKE_CURRENT_SOURCE_DIR}/examples/car/car.setup.yaml
+              ${CMAKE_CURRENT_SOURCE_DIR}/examples/car/car.machine.yaml
+              --check)
   endif()
 endif()

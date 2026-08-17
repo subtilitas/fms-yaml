@@ -2,7 +2,17 @@
 //
 // Car state machine on the console.
 //
-//   ./car_console [car.setup.yaml] [car.machine.yaml] [--quiet]
+//   ./car_console [setup.yaml] [machine.yaml] [--quiet] [--check]
+//
+// The YAML is read here, when the program runs, and nowhere else: the build does
+// not copy it, parse it or depend on it.  So the paths are yours to choose -
+// they default to car.setup.yaml and car.machine.yaml in the working directory:
+//
+//   cd examples/car && ../../build/car_console
+//   ./build/car_console examples/car/car.setup.yaml examples/car/car.machine.yaml
+//
+// --check loads both files, reports what they describe and exits, which is how
+// you validate a configuration without building anything.
 //
 // The configuration comes in two files: the setup says where this instance runs
 // and where it starts, the machine says what it does.  Point the same machine
@@ -41,6 +51,34 @@ void report(const char* path, fms::Status status, const fms::config::Diagnostics
     std::fprintf(stderr, " at line %d", diagnostics.line);
   }
   std::fprintf(stderr, ": %s\n", diagnostics.message.c_str());
+  if (status == fms::Status::FileNotFound) {
+    std::fputs("hint: pass the paths, e.g. examples/car/car.setup.yaml "
+               "examples/car/car.machine.yaml\n",
+               stderr);
+  }
+}
+
+/// --check: say what the two files describe, then stop.
+void describe(const fms::Setup& setup, const fms::Model& model, const fms::StateMachine& machine) {
+  std::printf("setup   : instance '%s', starts in '%s'\n", setup.name().c_str(),
+              setup.initial_name().c_str());
+  std::printf("machine : '%s', %zu states, %zu triggers, %zu guard conditions\n",
+              model.name().c_str(), model.state_count(), model.trigger_count(),
+              model.condition_count());
+
+  for (const auto& entry : model.states()) {
+    const fms::StateId id = entry.first;
+    std::printf("  %-13s %s%zu trigger(s)", model.state_name(id),
+                (id == machine.initial()) ? "* " : "  ", entry.second.transitions.size());
+    for (const auto& transition : entry.second.transitions) {
+      std::printf(" %s", model.trigger_name(transition.first));
+      if (transition.second.size() > 1) {
+        std::printf("(%zu)", transition.second.size());
+      }
+    }
+    std::putchar('\n');
+  }
+  std::puts("ok");
 }
 
 // The whole system, statically allocated.
@@ -55,11 +93,14 @@ int main(int argc, char** argv) {
   const char* setup_path   = "car.setup.yaml";
   const char* machine_path = "car.machine.yaml";
   bool        quiet        = false;
+  bool        check_only   = false;
   int         positional   = 0;
 
   for (int i = 1; i < argc; ++i) {
     if (std::strcmp(argv[i], "--quiet") == 0) {
       quiet = true;
+    } else if (std::strcmp(argv[i], "--check") == 0) {
+      check_only = true;
     } else if (positional == 0) {
       setup_path = argv[i];
       ++positional;
@@ -86,8 +127,6 @@ int main(int argc, char** argv) {
     return 1;
   }
 
-  fms::port::ConsolePort port(/*prompt=*/!quiet);
-
   // init() is where the two files have to agree: the initial state named by the
   // setup must exist in the machine.
   const fms::Status bound = g_machine.init(g_model, g_setup);
@@ -96,6 +135,14 @@ int main(int argc, char** argv) {
                  fms::to_string(bound), g_setup.initial_name().c_str());
     return 1;
   }
+
+  if (check_only) {
+    describe(g_setup, g_model, g_machine);
+    return 0;
+  }
+
+  fms::port::ConsolePort port(/*prompt=*/!quiet);
+
   if (!fms::is_ok(g_runtime.init(g_machine, port))) {
     std::fputs("runtime init failed\n", stderr);
     return 1;

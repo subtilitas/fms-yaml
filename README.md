@@ -19,7 +19,8 @@ No actions, no timers, no nesting, and no application code in the decision.
 | States and triggers stored with their dependencies in a flat map | `flat_map<StateId, StateNode>`, and inside each node `flat_map<TriggerId, StateId>` |
 | No dynamic allocation after setup | fixed capacities from `fms/limits.hpp`; proven by `tests/test_no_alloc.cpp`, which replaces global `operator new` and traps it |
 | No exceptions | everything is compiled `-fno-exceptions`; the one TU that talks to yaml-cpp is the exception firewall and returns `Status` |
-| Interface left open | the core has no transport dependency at all — `fms::IPort` is six virtual methods, and the shipped implementations are a console port and an in-memory test port |
+| Interface left open | the core has no transport dependency at all — `fms::IPort` is seven virtual methods, and the shipped implementations are a console port and an in-memory test port |
+| Config is a run-time input | the build never opens the YAML: no copying, no parsing, no dependency. `--check` validates a config by running the binary |
 
 ## Build
 
@@ -34,11 +35,20 @@ They are fetched automatically; `-DFMS_FETCH_DEPS=OFF` uses installed copies.
 
 ## Run the car example
 
+The YAML is read when the program runs, and nowhere else — the build does not
+copy it, parse it or depend on it. So the paths are yours; they default to
+`car.setup.yaml` and `car.machine.yaml` in the working directory:
+
+```sh
+./build/car_console examples/car/car.setup.yaml examples/car/car.machine.yaml
+cd examples/car && ../../build/car_console          # or just run it from there
+```
+
 `car_console` reads trigger names from `std::cin` and writes state changes to
 `std::cout`:
 
 ```
-$ ./build/car_console car.setup.yaml car.machine.yaml
+$ ./build/car_console examples/car/car.setup.yaml examples/car/car.machine.yaml
 car-ecu-01 running 'car': 7 states, 10 triggers - type 'help' or 'quit'
 state: power_off
 > ignition_on
@@ -84,6 +94,28 @@ machine can be started somewhere else entirely by swapping it:
 
 ```sh
 ./build/car_console bench.setup.yaml car.machine.yaml   # same machine, starts in standing
+```
+
+`--check` loads both files, says what they describe and exits — how you validate
+a configuration without building anything:
+
+```sh
+$ ./build/car_console examples/car/car.setup.yaml examples/car/car.machine.yaml --check
+setup   : instance 'car-ecu-01', starts in 'power_off'
+machine : 'car', 7 states, 10 triggers, 7 guard conditions
+  power_off     * 1 trigger(s) ignition_on
+  self_test       3 trigger(s) ignition_off self_test_passed(2) self_test_failed
+  standing        4 trigger(s) ignition_off throttle_pressed(2) engine_fault(2) brake_pressed
+  ...
+ok
+```
+
+A number in brackets is how many guarded alternatives that trigger has. A bad
+file fails here rather than at the first trigger:
+
+```
+$ ./build/car_console car.setup.yaml broken.machine.yaml --check
+broken.machine.yaml: unknown state at line 50: target state 'nowhere' does not exist
 ```
 
 ## The car machine

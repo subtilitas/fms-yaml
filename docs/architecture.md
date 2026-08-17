@@ -28,6 +28,38 @@ own cannot resolve it. `StateMachine::init` resolves it once and fails there if
 the state does not exist, so a mismatched pair is caught at start-up rather than
 on the first trigger.
 
+## The configuration is a run-time input
+
+Nothing in the build system opens the YAML. It is not copied next to the binary,
+not parsed, not validated, and not a dependency of any target — the only place
+either file is read is `load_setup_file` / `load_machine_file`, when the program
+runs.
+
+That is a deliberate line, and it is easy to cross by accident. An earlier
+revision copied the example configs next to the binary with `configure_file`,
+which also makes CMake re-run when they change: convenient, and wrong. It put the
+config in the build graph, so the build had an opinion about a file that belongs
+to the deployment, and a stale copy could differ from the source. Both are now
+gone; the example takes paths, defaulting to the working directory.
+
+What follows from the rule:
+
+* a config can be edited, reviewed, signed or swapped without rebuilding
+* the same binary serves every deployment - only the files differ
+* a mistake surfaces at start-up, not at compile time
+
+The last one is the price, and it is why every diagnostic carries a line number
+and why the example has a `--check` mode: load both files, report what they
+describe, exit. CI validates configurations by *running* that, which keeps the
+check where it belongs - at run time, on the real loader - instead of duplicating
+the schema in a build script.
+
+```sh
+car_console car.setup.yaml car.machine.yaml --check
+```
+
+The `car_config_check` ctest case is exactly that command.
+
 ## The two phases
 
 ```
@@ -286,6 +318,7 @@ nm -C libfms_config.a | grep -cE '__cxa_throw|_Unwind_Resume'    # non-zero: the
 | `test_runtime.cpp` | channel routing, error feedback, `configure()` before `open()`, trace hook, end of input |
 | `test_no_alloc.cpp` | the heap trap |
 | `car_console_pipe` (ctest) | the example driven by a scripted session on stdin, stdout compared with `tests/car_session.expected` |
+| `car_config_check` (ctest) | the shipped configuration loaded by the real loader, via `--check` |
 
 ## Threading
 
@@ -299,6 +332,8 @@ drain it from the same loop — do not call `fire()` concurrently.
 2. Write an `IPort` for your link (CAN, UART, shared memory).
 3. Load the config on the host and ship the `Model`, or keep yaml-cpp on a target
    that can afford a heap during boot. Nothing downstream cares where the `Model`
-   came from — it is a plain object.
+   came from — it is a plain object. Note that shipping a pre-built `Model` is the
+   one case where the config *is* read ahead of time; do it in a tool you run, not
+   in the build of the firmware, or the rule above quietly stops holding.
 4. Tune `fms/limits.hpp` down, then check `sizeof(fms::Model)` against your
    budget.

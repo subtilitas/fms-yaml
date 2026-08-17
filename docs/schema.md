@@ -12,6 +12,14 @@ sections with a diagnostic naming the file it belongs in. The one cross-file
 reference — the initial state named by the setup — is checked when the two are
 bound in `StateMachine::init`.
 
+Both files are read **when the program runs**. Nothing in the build system opens,
+copies, validates or depends on them, which means a config can be edited, shipped
+or replaced without rebuilding, and a machine file the build never opened cannot
+be a machine file the build got wrong. The cost of that choice is that a mistake
+surfaces at start-up rather than at compile time — so every diagnostic carries a
+line number, and the example has a `--check` mode that loads a pair of files,
+reports what they describe and exits.
+
 ---
 
 # The setup file
