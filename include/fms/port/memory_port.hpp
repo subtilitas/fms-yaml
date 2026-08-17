@@ -49,7 +49,7 @@ class MemoryPort final : public IPort {
     return Status::Ok;
   }
 
-  Status receive(StringView& channel, std::uint32_t /*timeout_ms*/) noexcept override {
+  Status receive(Input& input, std::uint32_t /*timeout_ms*/) noexcept override {
     if (!open_) {
       return Status::NotOpen;
     }
@@ -58,7 +58,8 @@ class MemoryPort final : public IPort {
     }
     current_ = inbox_.front();
     inbox_.erase(inbox_.begin());
-    channel = view(current_);
+    input.channel   = view(current_.channel);
+    input.arguments = view(current_.arguments);
     return Status::Ok;
   }
 
@@ -72,15 +73,17 @@ class MemoryPort final : public IPort {
 
   // ---- test helpers -------------------------------------------------------
 
-  /// Queues input as if it had arrived on `channel`.
-  Status inject(StringView channel) noexcept {
+  /// Queues input as if it had arrived on `channel`, optionally carrying
+  /// `key=value` arguments.
+  Status inject(StringView channel, StringView arguments = StringView{}) noexcept {
     if (inbox_.full()) {
       return Status::CapacityExceeded;
     }
-    Channel entry;
-    if (!assign_checked(entry, channel)) {
+    Queued entry;
+    if (!assign_checked(entry.channel, channel)) {
       return Status::ChannelTooLong;
     }
+    append_clipped(entry.arguments, arguments);
     inbox_.push_back(entry);
     return Status::Ok;
   }
@@ -133,9 +136,15 @@ class MemoryPort final : public IPort {
 
   IoConfig io_{};
 
-  Channel current_{};  ///< storage the view handed to receive() points at
+  /// One queued input.  `current_` is where the views handed to receive() point.
+  struct Queued {
+    Channel channel{};
+    Message arguments{};
+  };
 
-  etl::vector<Channel, QueueDepth>          inbox_{};
+  Queued current_{};
+
+  etl::vector<Queued, QueueDepth>           inbox_{};
   etl::vector<Channel, limits::kMaxTriggers> listening_{};
   etl::vector<Message, HistoryDepth>        states_{};
   etl::vector<Message, HistoryDepth>        errors_{};

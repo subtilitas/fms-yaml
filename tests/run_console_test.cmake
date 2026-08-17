@@ -1,8 +1,9 @@
 # SPDX-License-Identifier: MIT
 #
 # Drives the console example with a scripted session on stdin and compares its
-# stdout with the recorded transcript.  Also checks that the two refused
-# triggers and the unknown channel were reported on stderr.
+# stdout with the recorded transcript.  The session carries trigger arguments,
+# so it also covers guards deciding between alternatives.  Refused triggers and
+# unknown channels are checked on stderr.
 #
 # Run through ctest; see the car_console_pipe test in the top-level CMakeLists.
 
@@ -28,8 +29,8 @@ if(NOT actual STREQUAL expected)
 endif()
 
 foreach(needle
-    "rejected: brake_pressed in state self_test"
-    "rejected: vehicle_stopped in state accelerating"
+    "rejected: brake_released in state power_off"
+    "rejected: vehicle_stopped in state braking: no guard matched .speed=20."
     "unknown channel: handbrake")
   if(NOT errors MATCHES "${needle}")
     message(FATAL_ERROR "stderr is missing '${needle}'\n--- stderr ---\n${errors}")

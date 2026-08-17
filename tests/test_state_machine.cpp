@@ -131,8 +131,12 @@ TEST_CASE("the model rejects duplicates and dangling references") {
   CHECK(model.add_transition(42, t, a) == fms::Status::UnknownState);
   CHECK(model.add_transition(a, 42, a) == fms::Status::UnknownTrigger);
 
-  REQUIRE(model.add_transition(a, t, a) == fms::Status::Ok);
-  CHECK(model.add_transition(a, t, a) == fms::Status::DuplicateName);  // same trigger twice
+  // Adding the same trigger again appends another alternative - that is how
+  // guarded branching is expressed - until the ceiling is reached.
+  for (std::size_t i = 0; i < fms::limits::kMaxAlternatives; ++i) {
+    REQUIRE(model.add_transition(a, t, a) == fms::Status::Ok);
+  }
+  CHECK(model.add_transition(a, t, a) == fms::Status::CapacityExceeded);
 
   // The model validates on its own: the initial state is the setup's business.
   CHECK(model.validate() == fms::Status::Ok);

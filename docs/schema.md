@@ -79,30 +79,90 @@ triggers:
   - {name: brake_released, channel: "car/brakes/off"}  # explicit
 ```
 
+### Arguments
+
+A trigger may carry `key=value` pairs — on the console, everything after the
+first word:
+
+```
+> self_test_passed errors=0
+> throttle_pressed pedal=42 mode=sport
+```
+
+They are not declared anywhere: the port hands the text over, the core parses it
+into views over the port's buffer, and guards compare against it. Values stay
+text until something asks for a number. Up to `FMS_MAX_ARGUMENTS` pairs; a
+malformed list (a token without `=`, a repeated key) is reported on the error
+channel and changes nothing.
+
 ## `states` (required, non-empty sequence)
 
 | Key | Type | Meaning |
 |---|---|---|
 | `name` | string | **required**, unique |
-| `transitions` | mapping `trigger: next_state` | optional; a state with none accepts nothing |
+| `transitions` | mapping `trigger: outcome` | optional; a state with none accepts nothing |
+
+An outcome has three spellings, so the simple case stays one line:
 
 ```yaml
 states:
-  - name: accelerating
+  - name: self_test
     transitions:
-      throttle_released: coasting
-      brake_pressed:     braking
-      engine_fault:      fault
+      ignition_off: power_off                            # 1. a state name
+
+      self_test_failed: {when: "errors > 0", target: fault}   # 2. one guarded alternative
+
+      self_test_passed:                                  # 3. ordered alternatives
+        - {when: "errors == 0", target: standing}
+        - {target: fault}                                #    unguarded: the fallback
 ```
 
+Alternatives are tried in the order written and the first whose guard holds wins.
+An entry without a `when` always holds, so it is the fallback and anything after
+it is unreachable.
+
 Because `transitions` is a mapping, a state cannot list the same trigger twice —
-YAML keys are unique, so ambiguity is impossible by construction. A trigger a
-state does not list is rejected: the state is unchanged, `fire()` returns
-`Status::NoTransition`, and the runtime publishes
-`rejected: <trigger> in state <state>` on the error channel.
+YAML keys are unique, so the alternatives for a trigger are always in one place.
 
 Self-transitions are allowed (`brake_pressed: standing` inside `standing`) and
-are the way to say "accepted, but nothing changes".
+are the way to say "accepted, but nothing changes". An accepted trigger always
+republishes the state, even when it did not change.
+
+### Guards
+
+A guard is one comparison against one argument:
+
+```yaml
+when: "pedal > 30"                        # a single condition
+when: ["severity >= 2", "system == engine"]   # a list is ANDed
+```
+
+| | |
+|---|---|
+| Operators | `==` (or `=`), `!=`, `<`, `<=`, `>`, `>=` |
+| Types | integers and text. `<` `<=` `>` `>=` need an integer literal; text takes only `==` and `!=` |
+| AND | list several conditions under one `when` |
+| OR | write several alternatives |
+| Missing argument | the condition is false — a guard decides, it never errors |
+| Unparsable value | same: `pedal=fast` against `pedal > 30` is false |
+
+Guards are parsed at load time, so `when: "pedal"` or `when: "mode > sport"` is a
+config error with a line number, not a run-time surprise. There is no
+arithmetic, no nesting and no negation beyond `!=`: a guard should be readable at
+a glance.
+
+### What rejection looks like
+
+| Situation | `fire()` returns | Reported on the error channel |
+|---|---|---|
+| the state does not list the trigger | `Status::NoTransition` | `rejected: <trigger> in state <state>` |
+| it lists it, but no guard held | `Status::GuardRejected` | `rejected: <trigger> in state <state>: no guard matched (<arguments>)` |
+| the arguments were malformed | — | `bad arguments for <trigger>: <reason>` |
+| nothing listens on that channel | — | `unknown channel: <channel>` |
+
+In every case the state is unchanged. Including the arguments in the guard
+message is deliberate: when a trigger you expected to work does not, what you
+want to see is what the machine was actually given.
 
 ---
 
@@ -126,14 +186,18 @@ Every string and container is fixed capacity. Exceeding one is a load-time error
 (`NameTooLong`, `ChannelTooLong`, `CapacityExceeded`) — values are never
 silently truncated. Defaults from `include/fms/limits.hpp`:
 
-| Macro | Default |
-|---|---|
-| `FMS_MAX_STATES` | 32 |
-| `FMS_MAX_TRIGGERS` | 32 |
-| `FMS_MAX_TRANSITIONS_PER_STATE` | 8 |
-| `FMS_MAX_NAME_LENGTH` | 31 |
-| `FMS_MAX_CHANNEL_LENGTH` | 95 |
-| `FMS_MAX_MESSAGE_LENGTH` | 127 |
+| Macro | Default | |
+|---|---|---|
+| `FMS_MAX_STATES` | 32 | |
+| `FMS_MAX_TRIGGERS` | 32 | |
+| `FMS_MAX_TRANSITIONS_PER_STATE` | 8 | triggers one state may list |
+| `FMS_MAX_ALTERNATIVES` | 4 | guarded outcomes for one trigger |
+| `FMS_MAX_CONDITIONS_PER_GUARD` | 3 | conditions ANDed in one `when` |
+| `FMS_MAX_CONDITIONS` | 64 | machine-wide condition pool |
+| `FMS_MAX_ARGUMENTS` | 4 | `key=value` pairs one trigger may carry |
+| `FMS_MAX_NAME_LENGTH` | 31 | |
+| `FMS_MAX_CHANNEL_LENGTH` | 95 | |
+| `FMS_MAX_MESSAGE_LENGTH` | 127 | |
 
 Override them from the build system:
 

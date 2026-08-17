@@ -1,16 +1,21 @@
-# Machine: what the car does.  Triggers and states, nothing else - no
-# endpoints, no starting state, nothing about where this is deployed.
+# Machine: what the car does.  Triggers, guards and states - nothing about where
+# this is deployed; that is in car.setup.yaml.
 #
-#   power_off --ignition_on--> self_test --passed--> standing
-#   standing  --throttle_pressed--> accelerating --throttle_released--> coasting
+#   power_off --ignition_on--> self_test --errors == 0--> standing
+#                                        --otherwise---> fault
+#   standing  --throttle_pressed, pedal > 5--> accelerating
 #   coasting  --brake_pressed--> braking --vehicle_stopped--> standing
 #
-# Anything the current state does not list is rejected and reported.  There are
-# no guards, no actions and no parameters.
+# Guards are declarative comparisons against the arguments a trigger carries, so
+# there is still no application code in the decision.  Alternatives are tried in
+# the order written and the first whose guard holds wins; an entry without a
+# `when` always holds, which makes it the fallback.
 #
 # No 'channel' is given for any trigger, so each one listens on its own name -
-# which is exactly what you type into the console example.  A networked port
-# would add e.g. `channel: "car/brakes/pressed"` to each trigger.
+# which is what you type into the console example:
+#
+#   > self_test_passed errors=0
+#   > throttle_pressed pedal=42
 
 fsm:
   name: car          # the definition, not the instance - that is in the setup
@@ -19,17 +24,18 @@ triggers:
   # ignition switch
   - {name: ignition_on}
   - {name: ignition_off}
-  # self test unit
+  # self test unit          reports: errors=<count>
   - {name: self_test_passed}
   - {name: self_test_failed}
-  # engine
+  # engine                  throttle reports: pedal=<0..100>
   - {name: throttle_pressed}
   - {name: throttle_released}
+  #                         fault reports: severity=<1..3>
   - {name: engine_fault}
   # brake system
   - {name: brake_pressed}
   - {name: brake_released}
-  # wheel speed sensors
+  # wheel speed sensors     reports: speed=<km/h>
   - {name: vehicle_stopped}
 
 states:
@@ -39,33 +45,51 @@ states:
 
   - name: self_test
     transitions:
-      self_test_passed: standing
+      # A clean self test releases the car; anything else parks it in fault.
+      self_test_passed:
+        - {when: "errors == 0", target: standing}
+        - {target: fault}
       self_test_failed: fault
       ignition_off:     power_off
 
   - name: standing
     transitions:
-      throttle_pressed: accelerating
-      brake_pressed:    standing      # holding the brake while parked changes nothing
-      engine_fault:     fault
-      ignition_off:     power_off
+      # Resting a foot on the pedal is not pulling away.
+      throttle_pressed:
+        - {when: "pedal > 5", target: accelerating}
+        - {target: standing}
+      brake_pressed: standing        # holding the brake while parked changes nothing
+      engine_fault:
+        - {when: "severity >= 2", target: fault}
+        - {target: standing}         # a warning is noted, the car stays usable
+      ignition_off: power_off
 
   - name: accelerating
     transitions:
       throttle_released: coasting
       brake_pressed:     braking
-      engine_fault:      fault
+      engine_fault:
+        - {when: "severity >= 2", target: fault}
+        - {target: accelerating}
 
   - name: coasting
     transitions:
-      throttle_pressed: accelerating
-      brake_pressed:    braking
-      vehicle_stopped:  standing
-      engine_fault:     fault
+      throttle_pressed:
+        - {when: "pedal > 5", target: accelerating}
+        - {target: coasting}
+      brake_pressed: braking
+      # Only believe the wheels once they agree the car is standing still.
+      vehicle_stopped:
+        - {when: "speed == 0", target: standing}
+        - {target: coasting}
+      engine_fault: fault
 
   - name: braking
     transitions:
-      vehicle_stopped: standing
+      # No fallback here, deliberately: while braking, a "stopped" report that
+      # does not say speed=0 is refused outright and shows up on the error
+      # channel, rather than being quietly treated as "carry on braking".
+      vehicle_stopped: {when: "speed == 0", target: standing}
       brake_released:  coasting
       engine_fault:    fault
 

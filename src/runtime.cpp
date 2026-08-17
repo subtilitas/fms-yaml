@@ -70,8 +70,8 @@ Status Runtime::service(std::uint32_t timeout_ms) noexcept {
     return Status::NotInitialised;
   }
 
-  StringView   channel;
-  const Status received = port_->receive(channel, timeout_ms);
+  Input        input;
+  const Status received = port_->receive(input, timeout_ms);
   if (received == Status::Timeout) {
     return Status::Ok;  // idle, not an error
   }
@@ -82,14 +82,23 @@ Status Runtime::service(std::uint32_t timeout_ms) noexcept {
   ++inputs_received_;
 
   // One channel per trigger: routing is a single lookup.
-  const TriggerId trigger = model_->find_trigger_for_channel(channel);
+  const TriggerId trigger = model_->find_trigger_for_channel(input.channel);
   if (trigger == kNoTrigger) {
     ++inputs_unrouted_;
-    publish_unknown(channel);
+    publish_unknown(input.channel);
     return Status::Ok;
   }
 
-  dispatch(trigger);
+  // Parse into a member: the values are views into the port's buffer, valid
+  // until the next receive(), which is exactly as long as this dispatch.
+  const Status parsed = args_.parse(input.arguments);
+  if (!is_ok(parsed)) {
+    ++inputs_rejected_;
+    publish_bad_arguments(trigger, parsed);
+    return Status::Ok;
+  }
+
+  dispatch(trigger, args_);
   return Status::Ok;
 }
 
@@ -101,7 +110,7 @@ Status Runtime::stop() noexcept {
   return port_->close();
 }
 
-Status Runtime::fire_by_name(StringView trigger_name) noexcept {
+Status Runtime::fire_by_name(StringView trigger_name, StringView arguments) noexcept {
   if (!started_) {
     return Status::NotInitialised;
   }
@@ -109,21 +118,26 @@ Status Runtime::fire_by_name(StringView trigger_name) noexcept {
   if (trigger == kNoTrigger) {
     return Status::UnknownTrigger;
   }
-  return dispatch(trigger);
+  const Status parsed = args_.parse(arguments);
+  if (!is_ok(parsed)) {
+    return parsed;
+  }
+  return dispatch(trigger, args_);
 }
 
 // ---------------------------------------------------------------------------
 // internals
 // ---------------------------------------------------------------------------
 
-Status Runtime::dispatch(TriggerId trigger) noexcept {
+Status Runtime::dispatch(TriggerId trigger, const Args& args) noexcept {
   TransitionEvent event;
-  const Status    status = machine_->fire(trigger, event);
+  const Status    status = machine_->fire(trigger, args, event);
 
   if (is_ok(status)) {
     publish_state(event.to);
-  } else if (status == Status::NoTransition) {
-    publish_rejection(event.from, trigger);
+  } else if (status == Status::NoTransition || status == Status::GuardRejected) {
+    ++inputs_rejected_;
+    publish_rejection(event, args);
   }
 
   if (trace_ != nullptr) {
@@ -139,13 +153,30 @@ void Runtime::publish_state(StateId state) noexcept {
   }
 }
 
-void Runtime::publish_rejection(StateId state, TriggerId trigger) noexcept {
-  // "rejected: <trigger> in state <state>" - built in a fixed member buffer.
+void Runtime::publish_rejection(const TransitionEvent& event, const Args& args) noexcept {
+  // "rejected: <trigger> in state <state>", and for a guard rejection the
+  // arguments that failed to satisfy it - which is the thing you actually want
+  // to see when a trigger you expected to work does not.
   scratch_.clear();
   append_clipped(scratch_, cstr("rejected: "));
-  append_clipped(scratch_, cstr(model_->trigger_name(trigger)));
+  append_clipped(scratch_, cstr(model_->trigger_name(event.trigger)));
   append_clipped(scratch_, cstr(" in state "));
-  append_clipped(scratch_, cstr(model_->state_name(state)));
+  append_clipped(scratch_, cstr(model_->state_name(event.from)));
+
+  if (event.guard_rejected) {
+    append_clipped(scratch_, cstr(": no guard matched ("));
+    append_clipped(scratch_, args.empty() ? cstr("no arguments") : args.raw());
+    append_clipped(scratch_, cstr(")"));
+  }
+  port_->publish_error(view(scratch_));
+}
+
+void Runtime::publish_bad_arguments(TriggerId trigger, Status reason) noexcept {
+  scratch_.clear();
+  append_clipped(scratch_, cstr("bad arguments for "));
+  append_clipped(scratch_, cstr(model_->trigger_name(trigger)));
+  append_clipped(scratch_, cstr(": "));
+  append_clipped(scratch_, cstr(to_string(reason)));
   port_->publish_error(view(scratch_));
 }
 

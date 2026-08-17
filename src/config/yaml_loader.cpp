@@ -194,7 +194,89 @@ Status declare_states(const YAML::Node& node, Model& model, Diagnostics& diagnos
   return Status::Ok;
 }
 
-/// Second pass: wire the transitions.
+/// Reads the `when` of one alternative: a single comparison, or a sequence of
+/// them, which are ANDed.
+Status parse_when(const YAML::Node& node, const char* trigger_name, ConditionList& out,
+                  Diagnostics& diagnostics) {
+  if (!node) {
+    return Status::Ok;  // unguarded
+  }
+
+  const auto read_one = [&](const YAML::Node& scalar) -> Status {
+    const std::string text = scalar.as<std::string>();
+    if (out.full()) {
+      set_message(diagnostics, Status::CapacityExceeded, line_of(scalar),
+                  "'%s': more than FMS_MAX_CONDITIONS_PER_GUARD conditions", trigger_name);
+      return Status::CapacityExceeded;
+    }
+    Condition    condition;
+    const Status status = parse_condition(as_view(text), condition);
+    if (!is_ok(status)) {
+      set_message(diagnostics, status, line_of(scalar),
+                  "'%s': cannot read the guard '%s' - expected <arg> <op> <value>", trigger_name,
+                  text.c_str());
+      return status;
+    }
+    out.push_back(condition);
+    return Status::Ok;
+  };
+
+  if (node.IsSequence()) {
+    for (const YAML::Node& scalar : node) {
+      const Status status = read_one(scalar);
+      if (!is_ok(status)) {
+        return status;
+      }
+    }
+    if (out.empty()) {
+      set_message(diagnostics, Status::SchemaError, line_of(node), "'%s': empty 'when'",
+                  trigger_name);
+      return Status::SchemaError;
+    }
+    return Status::Ok;
+  }
+  return read_one(node);
+}
+
+/// One alternative: `{when: ..., target: ...}`, where `when` is optional.
+Status parse_alternative(const YAML::Node& node, StateId from, TriggerId trigger,
+                         const char* trigger_name, Model& model, Diagnostics& diagnostics) {
+  if (!node.IsMap() || !node["target"]) {
+    set_message(diagnostics, Status::SchemaError, line_of(node),
+                "'%s': an alternative needs a 'target'", trigger_name);
+    return Status::SchemaError;
+  }
+
+  const std::string target_name = node["target"].as<std::string>();
+  const StateId     target      = model.find_state(as_view(target_name));
+  if (target == kNoState) {
+    set_message(diagnostics, Status::UnknownState, line_of(node["target"]),
+                "target state '%s' does not exist", target_name.c_str());
+    return Status::UnknownState;
+  }
+
+  ConditionList conditions;
+  const Status  guard = parse_when(node["when"], trigger_name, conditions, diagnostics);
+  if (!is_ok(guard)) {
+    return guard;
+  }
+
+  const Status status = model.add_transition(from, trigger, target, conditions);
+  if (!is_ok(status)) {
+    set_message(diagnostics, status, line_of(node), "transition on '%s': %s", trigger_name,
+                to_string(status));
+  }
+  return status;
+}
+
+/// Second pass: wire the transitions.  Three accepted spellings, so the simple
+/// case stays a single line:
+///
+///   ignition_on: self_test                     unguarded
+///   throttle_pressed: {when: "pedal > 5", target: accelerating}
+///   self_test_passed:                          ordered alternatives
+///     - {when: "errors == 0", target: standing}
+///     - {target: fault}                        unguarded fallback
 Status link_states(const YAML::Node& node, Model& model, Diagnostics& diagnostics) {
   for (const YAML::Node& entry : node) {
     const std::string state_name = entry["name"].as<std::string>();
@@ -206,34 +288,67 @@ Status link_states(const YAML::Node& node, Model& model, Diagnostics& diagnostic
     }
     if (!transitions.IsMap()) {
       set_message(diagnostics, Status::SchemaError, line_of(transitions),
-                  "'transitions' must be a mapping of trigger -> state");
+                  "'transitions' must be a mapping of trigger -> state or alternatives");
       return Status::SchemaError;
     }
 
     for (const auto& pair : transitions) {
       const std::string trigger_name = pair.first.as<std::string>();
-      const std::string target_name  = pair.second.as<std::string>();
-
-      const TriggerId trigger = model.find_trigger(as_view(trigger_name));
+      const TriggerId   trigger      = model.find_trigger(as_view(trigger_name));
       if (trigger == kNoTrigger) {
         set_message(diagnostics, Status::UnknownTrigger, line_of(pair.first),
                     "trigger '%s' is not declared", trigger_name.c_str());
         return Status::UnknownTrigger;
       }
 
-      const StateId target = model.find_state(as_view(target_name));
-      if (target == kNoState) {
-        set_message(diagnostics, Status::UnknownState, line_of(pair.second),
-                    "target state '%s' does not exist", target_name.c_str());
-        return Status::UnknownState;
+      const YAML::Node& outcome = pair.second;
+
+      if (outcome.IsScalar()) {
+        const std::string target_name = outcome.as<std::string>();
+        const StateId     target      = model.find_state(as_view(target_name));
+        if (target == kNoState) {
+          set_message(diagnostics, Status::UnknownState, line_of(outcome),
+                      "target state '%s' does not exist", target_name.c_str());
+          return Status::UnknownState;
+        }
+        const Status status = model.add_transition(from, trigger, target);
+        if (!is_ok(status)) {
+          set_message(diagnostics, status, line_of(pair.first), "transition on '%s': %s",
+                      trigger_name.c_str(), to_string(status));
+          return status;
+        }
+        continue;
       }
 
-      const Status status = model.add_transition(from, trigger, target);
-      if (!is_ok(status)) {
-        set_message(diagnostics, status, line_of(pair.first), "transition on '%s': %s",
-                    trigger_name.c_str(), to_string(status));
-        return status;
+      if (outcome.IsMap()) {
+        const Status status = parse_alternative(outcome, from, trigger, trigger_name.c_str(),
+                                                model, diagnostics);
+        if (!is_ok(status)) {
+          return status;
+        }
+        continue;
       }
+
+      if (outcome.IsSequence()) {
+        if (outcome.size() == 0) {
+          set_message(diagnostics, Status::SchemaError, line_of(outcome),
+                      "'%s': empty list of alternatives", trigger_name.c_str());
+          return Status::SchemaError;
+        }
+        for (const YAML::Node& alternative : outcome) {
+          const Status status = parse_alternative(alternative, from, trigger,
+                                                  trigger_name.c_str(), model, diagnostics);
+          if (!is_ok(status)) {
+            return status;
+          }
+        }
+        continue;
+      }
+
+      set_message(diagnostics, Status::SchemaError, line_of(outcome),
+                  "'%s': expected a state name, one alternative, or a list of them",
+                  trigger_name.c_str());
+      return Status::SchemaError;
     }
   }
   return Status::Ok;

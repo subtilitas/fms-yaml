@@ -46,7 +46,7 @@ Status StateMachine::start() noexcept {
   return Status::Ok;
 }
 
-Status StateMachine::fire(TriggerId trigger, TransitionEvent& out) noexcept {
+Status StateMachine::fire(TriggerId trigger, const Args& args, TransitionEvent& out) noexcept {
   out = TransitionEvent{};
 
   if (model_ == nullptr || !started_) {
@@ -56,24 +56,39 @@ Status StateMachine::fire(TriggerId trigger, TransitionEvent& out) noexcept {
   out.from    = current_;
   out.trigger = trigger;
 
-  // One binary search in the current state's transition table.  That is the
-  // whole decision: a match is a state change, no match is an error.
-  const StateId target = model_->target_of(current_, trigger);
-  if (target == kNoState) {
-    ++rejection_count_;
-    return Status::NoTransition;
+  // One binary search in the current state's transition table, then the
+  // alternatives in file order.  That is the whole decision.
+  StateId        target   = kNoState;
+  const Decision decision = model_->evaluate(current_, trigger, args, target);
+
+  if (decision == Decision::Accepted) {
+    current_     = target;
+    out.to       = target;
+    out.accepted = true;
+    ++transition_count_;
+    return Status::Ok;
   }
 
-  current_     = target;
-  out.to       = target;
-  out.accepted = true;
-  ++transition_count_;
-  return Status::Ok;
+  ++rejection_count_;
+  if (decision == Decision::GuardRejected) {
+    out.guard_rejected = true;
+    return Status::GuardRejected;
+  }
+  return Status::NoTransition;
+}
+
+Status StateMachine::fire(TriggerId trigger, TransitionEvent& out) noexcept {
+  return fire(trigger, Args::none(), out);
+}
+
+Status StateMachine::fire(TriggerId trigger, const Args& args) noexcept {
+  TransitionEvent ignored;
+  return fire(trigger, args, ignored);
 }
 
 Status StateMachine::fire(TriggerId trigger) noexcept {
   TransitionEvent ignored;
-  return fire(trigger, ignored);
+  return fire(trigger, Args::none(), ignored);
 }
 
 const char* StateMachine::current_name() const noexcept {

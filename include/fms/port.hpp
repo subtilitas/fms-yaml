@@ -8,6 +8,10 @@
 // port decides.  Each trigger declares the channel that raises it (defaulting
 // to its own name), and the port is free to interpret that string.
 //
+// A trigger may carry arguments: `pedal=42 mode=sport`, in whatever the port's
+// transport calls a payload.  The port hands the text over untouched; the core
+// parses it into fms::Args and guards compare against it.
+//
 // To wire the machine to something new, implement this interface.  That is the
 // only file you need to look at:
 //
@@ -15,7 +19,7 @@
 //     fms::Status configure(const fms::IoConfig& io) noexcept override { ... }  // optional
 //     fms::Status open() noexcept override            { ... }
 //     fms::Status listen(fms::StringView ch) noexcept override  { ... }  // optional
-//     fms::Status receive(fms::StringView& ch, uint32_t ms) noexcept override { ... }
+//     fms::Status receive(fms::Input& in, uint32_t ms) noexcept override { ... }
 //     fms::Status publish_state(fms::StringView s) noexcept override { ... }
 //     fms::Status publish_error(fms::StringView m) noexcept override { ... }
 //     fms::Status close() noexcept override           { ... }
@@ -24,7 +28,7 @@
 // Contract:
 //   * No method may throw or allocate.
 //   * receive() is the only call that may block, and only up to timeout_ms.
-//   * The view returned by receive() must stay valid until the next call on the
+//   * The views returned by receive() must stay valid until the next call on the
 //     port, which means the port owns the buffer - the core only reads it.
 #ifndef FMS_PORT_HPP
 #define FMS_PORT_HPP
@@ -36,6 +40,13 @@
 #include "fms/types.hpp"
 
 namespace fms {
+
+/// One thing that arrived: where from, and what it carried.  Both views point
+/// into storage the port owns.
+struct Input {
+  StringView channel{};    ///< which trigger this is
+  StringView arguments{};  ///< `key=value key=value`, empty when there are none
+};
 
 class IPort {
  public:
@@ -59,11 +70,11 @@ class IPort {
   virtual Status listen(StringView /*channel*/) noexcept { return Status::Ok; }
 
   /// Waits up to `timeout_ms` for input.
-  ///   Status::Ok          - `channel` names where the input came from
+  ///   Status::Ok          - `input` is filled in
   ///   Status::Timeout     - nothing arrived; a normal, non-error outcome
   ///   Status::EndOfInput  - the source is exhausted (EOF, peer closed)
   ///   anything else       - a real failure
-  virtual Status receive(StringView& channel, std::uint32_t timeout_ms) noexcept = 0;
+  virtual Status receive(Input& input, std::uint32_t timeout_ms) noexcept = 0;
 
   /// Reports the state the machine has just entered.
   virtual Status publish_state(StringView state) noexcept = 0;

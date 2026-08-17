@@ -44,18 +44,25 @@ class Runtime {
   void set_trace(TraceFn trace, void* user) noexcept;
 
   /// Raises a trigger by name from application code instead of from the port.
-  Status fire_by_name(StringView trigger_name) noexcept;
+  /// `arguments` is the same `key=value` text a port would deliver.
+  Status fire_by_name(StringView trigger_name, StringView arguments = StringView{}) noexcept;
 
   std::uint32_t inputs_received() const noexcept { return inputs_received_; }
   std::uint32_t inputs_unrouted() const noexcept { return inputs_unrouted_; }
+  std::uint32_t inputs_rejected() const noexcept { return inputs_rejected_; }
+
+  /// The arguments of the most recent dispatch.  Only valid until the next
+  /// service() call, since the values are views into the port's buffer.
+  const Args& last_arguments() const noexcept { return args_; }
 
   const StateMachine* machine() const noexcept { return machine_; }
 
  private:
-  Status dispatch(TriggerId trigger) noexcept;
+  Status dispatch(TriggerId trigger, const Args& args) noexcept;
   void   publish_state(StateId state) noexcept;
-  void   publish_rejection(StateId state, TriggerId trigger) noexcept;
+  void   publish_rejection(const TransitionEvent& event, const Args& args) noexcept;
   void   publish_unknown(StringView channel) noexcept;
+  void   publish_bad_arguments(TriggerId trigger, Status reason) noexcept;
 
   const Model*  model_   = nullptr;
   const Setup*  setup_   = nullptr;
@@ -69,8 +76,13 @@ class Runtime {
   /// no temporaries and no heap.
   Message scratch_{};
 
+  /// Arguments of the dispatch in flight.  A member for the same reason: the
+  /// map is fixed capacity and the values are views, so parsing costs nothing.
+  Args args_{};
+
   std::uint32_t inputs_received_ = 0;
   std::uint32_t inputs_unrouted_ = 0;
+  std::uint32_t inputs_rejected_ = 0;
   bool          started_         = false;
 };
 

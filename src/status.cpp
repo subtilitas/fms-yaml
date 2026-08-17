@@ -38,6 +38,8 @@ const char* to_string(Status status) noexcept {
     case Status::AlreadyInitialised: return "already initialised";
     case Status::InvalidArgument:    return "invalid argument";
     case Status::NoTransition:       return "trigger not accepted in this state";
+    case Status::GuardRejected:      return "no guard held for this trigger";
+    case Status::ArgumentError:      return "malformed trigger arguments";
     case Status::PortError:          return "port error";
     case Status::NotOpen:            return "port is not open";
     case Status::Timeout:            return "timeout";

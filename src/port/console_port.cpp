@@ -39,7 +39,7 @@ Status ConsolePort::listen(StringView channel) noexcept {
   return Status::Ok;
 }
 
-Status ConsolePort::receive(StringView& channel, std::uint32_t /*timeout_ms*/) noexcept {
+Status ConsolePort::receive(Input& input, std::uint32_t /*timeout_ms*/) noexcept {
   for (;;) {
     if (prompt_) {
       std::cout << "> ";
@@ -58,7 +58,7 @@ Status ConsolePort::receive(StringView& channel, std::uint32_t /*timeout_ms*/) n
       // The line was longer than the buffer: drop the rest and complain.
       std::cin.clear();
       std::cin.ignore(std::numeric_limits<std::streamsize>::max(), '\n');
-      std::cerr << "error: input longer than " << limits::kMaxChannelLength << " characters\n";
+      std::cerr << "error: input longer than " << (sizeof(buffer_) - 1) << " characters\n";
       continue;
     }
 
@@ -89,7 +89,18 @@ Status ConsolePort::receive(StringView& channel, std::uint32_t /*timeout_ms*/) n
       continue;
     }
 
-    channel = StringView(text, length);
+    // First word is the channel, the rest - if any - are its arguments.
+    std::size_t split = 0;
+    while (split < length && std::isspace(static_cast<unsigned char>(text[split])) == 0) {
+      ++split;
+    }
+    std::size_t arguments = split;
+    while (arguments < length && std::isspace(static_cast<unsigned char>(text[arguments])) != 0) {
+      ++arguments;
+    }
+
+    input.channel   = StringView(text, split);
+    input.arguments = StringView(text + arguments, length - arguments);
     return Status::Ok;
   }
 }

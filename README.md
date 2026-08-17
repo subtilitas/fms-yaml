@@ -5,14 +5,16 @@ A finite state machine described entirely by a YAML file, built on the
 
 The whole behaviour, in one line:
 
-> **A trigger the current state lists changes the state. Anything else is an
-> error, reported back to whoever is listening.**
+> **A trigger the current state lists, whose guard holds, changes the state.
+> Anything else is an error, reported back to whoever is listening.**
 
-No guards, no actions, no parameters, no timers, no nesting.
+Triggers may carry `key=value` arguments, and guards are declarative comparisons
+against them — so the configuration stays the only description of the machine.
+No actions, no timers, no nesting, and no application code in the decision.
 
 | Constraint | How it is met |
 |---|---|
-| States and triggers come from a config file | two files: a **machine** file (triggers + states) and a **setup** file (everything else); there is nothing to register in code |
+| States, triggers and guards come from a config file | two files: a **machine** file (triggers, states, guards) and a **setup** file (everything else); there is nothing to register in code |
 | Built on ETL | `etl::flat_map`, `etl::vector`, `etl::string` throughout |
 | States and triggers stored with their dependencies in a flat map | `flat_map<StateId, StateNode>`, and inside each node `flat_map<TriggerId, StateId>` |
 | No dynamic allocation after setup | fixed capacities from `fms/limits.hpp`; proven by `tests/test_no_alloc.cpp`, which replaces global `operator new` and traps it |
@@ -42,21 +44,32 @@ state: power_off
 > ignition_on
   [power_off --ignition_on--> self_test]
 state: self_test
-> brake_pressed
-error: rejected: brake_pressed in state self_test
-> self_test_passed
-  [self_test --self_test_passed--> standing]
+> self_test_passed errors=2          ← the guard says errors must be 0
+  [self_test --self_test_passed--> fault]
+state: fault
+> ignition_off
+state: power_off
+> ignition_on
+> self_test_passed errors=0
 state: standing
+> throttle_pressed pedal=3           ← not enough pedal to pull away
+state: standing
+> throttle_pressed pedal=60
+state: accelerating
+> brake_pressed
+state: braking
+> vehicle_stopped speed=20
+error: rejected: vehicle_stopped in state braking: no guard matched (speed=20)
 > handbrake
 error: unknown channel: handbrake
 > quit
-final state 'standing': 2 transitions, 1 rejected, 4 inputs (1 unknown)
 ```
 
 It pipes just as well, which is how the `car_console_pipe` test drives it:
 
 ```sh
-printf 'ignition_on\nself_test_passed\nthrottle_pressed\n' | ./build/car_console --quiet
+printf 'ignition_on\nself_test_passed errors=0\nthrottle_pressed pedal=60\n' \
+  | ./build/car_console --quiet
 state: power_off
 state: self_test
 state: standing
@@ -128,17 +141,25 @@ fsm:
 triggers:
   - {name: ignition_on}                          # listens on its own name
   - {name: brake_pressed, channel: "car/brakes"} # ...or wherever you say
+  - {name: self_test_passed}                     # carries errors=<count>
+  - {name: throttle_pressed}                     # carries pedal=<0..100>
 
 states:
   - name: power_off
     transitions:
-      ignition_on: self_test    # trigger: next state
+      ignition_on: self_test    # plain: trigger -> next state
+
+  - name: self_test
+    transitions:
+      self_test_passed:         # guarded alternatives, in order
+        - {when: "errors == 0", target: standing}
+        - {target: fault}       # no `when`: the fallback
+
   - name: standing
     transitions:
-      throttle_pressed: accelerating
-  - name: accelerating
-    transitions:
-      brake_pressed: braking
+      throttle_pressed:         # resting a foot on the pedal is not pulling away
+        - {when: "pedal > 5", target: accelerating}
+        - {target: standing}
 ```
 
 `car.setup.yaml`:
@@ -158,6 +179,13 @@ io:
 A **channel** is an opaque address the port understands: a word typed on stdin,
 an MQTT topic, a CAN identifier, a UDP port. The core never interprets it — it
 only matches it. Omit it and the trigger listens on its own name.
+
+A **guard** is one comparison against one argument: `==` `!=` `<` `<=` `>` `>=`,
+over integers or text. List several conditions under one `when` to AND them,
+write several alternatives to OR them. Guards are parsed at load time, so
+`when: "pedal"` is a config error with a line number rather than a run-time
+surprise, and a missing argument simply makes the guard false — a guard decides,
+it never fails.
 
 Each loader rejects the other's sections, so a stray `states:` in the setup file
 is caught with a message saying where it belongs.
@@ -194,10 +222,14 @@ runtime.stop();
 Or drive the machine directly, with no port at all:
 
 ```cpp
+fms::Args args;
+args.parse("pedal=60");                      // views into your buffer, no copy
+
 fms::TransitionEvent event;
-switch (machine.fire(model.find_trigger("brake_pressed"), event)) {
-  case fms::Status::Ok:           /* event.from -> event.to */ break;
-  case fms::Status::NoTransition: /* rejected in event.from */ break;
+switch (machine.fire(model.find_trigger("throttle_pressed"), args, event)) {
+  case fms::Status::Ok:            /* event.from -> event.to */    break;
+  case fms::Status::GuardRejected: /* listed, but no guard held */ break;
+  case fms::Status::NoTransition:  /* not listed in this state */  break;
   default: break;
 }
 ```
@@ -244,23 +276,28 @@ Model                                              the behaviour
 ├── states_        flat_map<StateId, StateNode>    a state and its dependencies
 │   └── StateNode
 │       ├── name         Name
-│       └── transitions  flat_map<TriggerId, StateId>
+│       └── transitions  flat_map<TriggerId, Alternatives>
+│                          Alternative{first_condition, count, target}
+├── conditions_    vector<Condition>               machine-wide guard pool
 ├── state_index_   flat_map<Name, StateId>         name resolution, load time only
 ├── triggers_      flat_map<TriggerId, TriggerDef> a trigger and its channel
 ├── trigger_index_ flat_map<Name, TriggerId>
 └── channel_index_ flat_map<Channel, TriggerId>    inbound routing
 ```
 
-Firing a trigger is one binary search in the current state's transition map.
-A hit is the next state; a miss is the error. That is the entire engine —
-`StateMachine::fire()` is about twenty lines.
+Firing a trigger is one binary search in the current state's transition map, then
+the alternatives in file order until a guard holds. Conditions are interned in
+one pool and referenced by index, so an alternative is four bytes rather than two
+fixed-size strings — without that, a full Model would be hundreds of kilobytes.
 
 ## Layout
 
 ```
 include/fms/
   limits.hpp          compile-time capacities (override with -DFMS_MAX_STATES=…)
-  model.hpp           the machine: triggers and states, in flat maps
+  model.hpp           the machine: triggers, states and guarded alternatives
+  args.hpp            key=value arguments, as views over the port's buffer
+  condition.hpp       one guard: arg, operator, literal
   setup.hpp           the deployment: name, initial state, io
   io_config.hpp       the io block, so a port can see it without seeing the model
   state_machine.hpp   init / start / fire

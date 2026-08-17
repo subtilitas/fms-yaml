@@ -27,6 +27,8 @@ enum class Status : std::uint8_t {
   AlreadyInitialised,
   InvalidArgument,
   NoTransition,     ///< the current state does not accept this trigger
+  GuardRejected,    ///< it does accept it, but no guard held
+  ArgumentError,    ///< malformed trigger arguments
 
   // --- port ----------------------------------------------------------------
   PortError,

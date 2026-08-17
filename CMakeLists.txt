@@ -96,6 +96,8 @@ endif()
 # ---------------------------------------------------------------------------
 add_library(fms_core STATIC
   src/status.cpp
+  src/args.cpp
+  src/condition.cpp
   src/model.cpp
   src/setup.cpp
   src/state_machine.cpp
@@ -152,7 +154,13 @@ if(FMS_BUILD_EXAMPLES AND FMS_BUILD_CONSOLE)
   target_link_libraries(car_console PRIVATE fms_core fms_config fms_console)
   fms_disable_exceptions(car_console)
   fms_warnings(car_console)
+  # Put the configs next to the binary.  configure_file does the copy and, more
+  # importantly, makes CMake re-run when a YAML file changes - a bare POST_BUILD
+  # command would not, and editing the machine file is the commonest edit there
+  # is.  The POST_BUILD copy is for multi-config generators, where the binary
+  # lands in a per-configuration subdirectory.
   foreach(config car.setup.yaml car.machine.yaml)
+    configure_file(examples/car/${config} ${CMAKE_CURRENT_BINARY_DIR}/${config} COPYONLY)
     add_custom_command(TARGET car_console POST_BUILD
       COMMAND ${CMAKE_COMMAND} -E copy_if_different
               ${CMAKE_CURRENT_SOURCE_DIR}/examples/car/${config}
@@ -178,9 +186,12 @@ if(FMS_BUILD_TESTS)
 
   add_executable(fms_tests
     tests/test_main.cpp
+    tests/test_args.cpp
+    tests/test_condition.cpp
     tests/test_state_machine.cpp
     tests/test_setup.cpp
     tests/test_loader.cpp
+    tests/test_guards.cpp
     tests/test_runtime.cpp
     tests/test_no_alloc.cpp)
   target_link_libraries(fms_tests PRIVATE

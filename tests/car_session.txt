@@ -1,11 +1,15 @@
+brake_released
 ignition_on
-brake_pressed
-self_test_passed
-throttle_pressed
-vehicle_stopped
-brake_pressed
-vehicle_stopped
-handbrake
-engine_fault
+self_test_passed errors=2
 ignition_off
+ignition_on
+self_test_passed errors=0
+throttle_pressed pedal=3
+throttle_pressed pedal=60
+brake_pressed
+vehicle_stopped speed=20
+vehicle_stopped speed=0
+engine_fault severity=1
+engine_fault severity=3
+handbrake
 quit

@@ -2,12 +2,16 @@
 //
 // The machine: a model, a starting point from the setup, and a current state.
 //
-//   fire(trigger)  ->  Status::Ok           the state changed, see the event
-//                  ->  Status::NoTransition the current state does not accept
-//                                           this trigger; the state is unchanged
+//   fire(trigger, args) ->  Status::Ok            an alternative held; the state
+//                                                 changed, see the event
+//                       ->  Status::NoTransition  the current state does not list
+//                                                 this trigger at all
+//                       ->  Status::GuardRejected it lists it, but no guard held
 //
-// That is the entire behaviour.  No guards, no actions, no parameters, no
-// timers, no hierarchy.  Nothing here allocates, throws or blocks.
+// In every rejecting case the state is unchanged.  Guards are declarative
+// comparisons over the trigger's arguments (see condition.hpp), so there is
+// still no application code in the decision - and no actions, no timers, no
+// hierarchy.  Nothing here allocates, throws or blocks.
 #ifndef FMS_STATE_MACHINE_HPP
 #define FMS_STATE_MACHINE_HPP
 
@@ -23,6 +27,10 @@ struct TransitionEvent {
   StateId   to       = kNoState;
   TriggerId trigger  = kNoTrigger;
   bool      accepted = false;
+  /// True when the state does list the trigger but no guard held - worth
+  /// telling apart from "unknown here", because it usually means the arguments
+  /// were not what the machine was waiting for.
+  bool guard_rejected = false;
 };
 
 class StateMachine {
@@ -40,10 +48,14 @@ class StateMachine {
   /// Enters the initial state.
   Status start() noexcept;
 
-  /// Applies a trigger.
-  Status fire(TriggerId trigger, TransitionEvent& out) noexcept;
+  /// Applies a trigger together with the arguments it carried.  The arguments
+  /// are only read during the call - guards look at them, the machine does not
+  /// keep them.
+  Status fire(TriggerId trigger, const Args& args, TransitionEvent& out) noexcept;
 
-  /// Convenience overload for callers that do not need the detail.
+  /// Convenience overloads: no arguments, and/or no interest in the detail.
+  Status fire(TriggerId trigger, TransitionEvent& out) noexcept;
+  Status fire(TriggerId trigger, const Args& args) noexcept;
   Status fire(TriggerId trigger) noexcept;
 
   bool         started() const noexcept { return started_; }
