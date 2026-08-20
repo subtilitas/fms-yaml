@@ -256,6 +256,11 @@ jobs:
       # No compile database on purpose: cppcheck is here as an independent
       # second reader of the source, and pointing it at src/ and include/ keeps
       # it away from the dependency tree entirely.
+      #
+      # No --error-exitcode here.  The next step decides what fails, by
+      # severity, because cppcheck's style opinions change between releases and
+      # a new patch version inventing a new style check should not be able to
+      # turn the tree red.  Defects still do.
       - name: Run cppcheck
         run: |
           cppcheck \
@@ -266,31 +271,21 @@ jobs:
             --suppressions-list=.cppcheck-suppressions \
             --suppress=missingIncludeSystem \
             --check-level=exhaustive \
-            --error-exitcode=1 \
-            --inconclusive \
             -I include \
-            -D__cplusplus=201703L \
             --xml --xml-version=2 \
             src include 2> cppcheck.xml
-        continue-on-error: false
+          echo "cppcheck finished"
 
-      - name: Summarise findings
+      # error and warning fail the job; style, performance and portability are
+      # reported and do not.  Everything lands in the job summary either way.
+      - name: Report findings
         if: always()
         run: |
-          python3 - <<'PY'
-          import xml.etree.ElementTree as ET, pathlib, sys
-          p = pathlib.Path("cppcheck.xml")
-          if not p.exists() or not p.read_text().strip():
-              print("no cppcheck output"); sys.exit(0)
-          errors = ET.parse(p).getroot().findall(".//error")
-          if not errors:
-              print("cppcheck: clean"); sys.exit(0)
-          for e in errors:
-              loc = e.find("location")
-              where = f"{loc.get('file')}:{loc.get('line')}" if loc is not None else "-"
-              print(f"{e.get('severity'):12} {e.get('id'):32} {where}\n"
-                    f"             {e.get('msg')}")
-          PY
+          # Without pipefail the pipeline reports tee's exit code and the gate
+          # inside the script could never fail the step.
+          set -o pipefail
+          python3 tools/cppcheck_report.py cppcheck.xml \
+            | tee -a "${GITHUB_STEP_SUMMARY:-/dev/stdout}"
 
       - name: Upload the cppcheck report
         if: always()

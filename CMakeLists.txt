@@ -111,6 +111,34 @@ endfunction()
 # ---------------------------------------------------------------------------
 include(FetchContent)
 
+# ---------------------------------------------------------------------------
+# Helper: demote a dependency's headers to -isystem.
+#
+# Without this, -Wall -Wextra -Wshadow apply to yaml-cpp's and ETL's headers as
+# though we had written them.  Clang's -Wshadow, for instance, objects to
+# YAML::EmitterStyle::Block shadowing YAML::Block - a real observation about
+# yaml-cpp that we cannot act on and did not ask for.  With -Werror it fails
+# the build outright, which is a warning system reporting on the wrong code.
+#
+# FetchContent_Declare gained a SYSTEM keyword in CMake 3.25, but this project
+# supports 3.20, so set the property directly - it works on every version and
+# on ALIAS targets, which is how all three dependencies are consumed.
+# ---------------------------------------------------------------------------
+function(fms_make_dependency_system target)
+  if(NOT TARGET ${target})
+    return()
+  endif()
+  get_target_property(aliased ${target} ALIASED_TARGET)
+  if(aliased)
+    set(target ${aliased})
+  endif()
+  get_target_property(dirs ${target} INTERFACE_INCLUDE_DIRECTORIES)
+  if(dirs)
+    set_target_properties(${target} PROPERTIES
+      INTERFACE_SYSTEM_INCLUDE_DIRECTORIES "${dirs}")
+  endif()
+endfunction()
+
 # yaml-cpp 0.8.0 still declares cmake_minimum_required(3.4), which CMake 4
 # refuses outright.  Ask CMake to keep the old floor for it.
 if(CMAKE_VERSION VERSION_GREATER_EQUAL 4.0 AND NOT DEFINED CMAKE_POLICY_VERSION_MINIMUM)
@@ -127,6 +155,7 @@ if(FMS_FETCH_DEPS)
 else()
   find_package(etl REQUIRED)
 endif()
+fms_make_dependency_system(etl::etl)
 
 # --- yaml-cpp ---------------------------------------------------------------
 if(FMS_FETCH_DEPS)
@@ -143,6 +172,7 @@ if(FMS_FETCH_DEPS)
 else()
   find_package(yaml-cpp REQUIRED)
 endif()
+fms_make_dependency_system(yaml-cpp::yaml-cpp)
 
 # ---------------------------------------------------------------------------
 # fms_core : the state machine itself.  No exceptions, no heap after setup,
@@ -235,6 +265,7 @@ if(FMS_BUILD_TESTS)
   else()
     find_package(doctest REQUIRED)
   endif()
+  fms_make_dependency_system(doctest::doctest)
 
   add_executable(fms_tests
     tests/test_main.cpp

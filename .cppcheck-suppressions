@@ -1,24 +1,34 @@
 # SPDX-License-Identifier: MIT
-#
-# cppcheck suppressions.  Each one names a finding that is correct about the
+# cppcheck suppressions.  Each entry names a finding that is correct about the
 # code and wrong about the intent; anything not listed here is a real report.
 # Prefer an inline `// cppcheck-suppress <id>` with a reason when the exception
 # is local to one line - this file is for the ones that are project-wide.
+# Syntax is <id>[:<file glob>[:<line>]].
+# EDITING RULE: never leave a line holding nothing but "#", anywhere in this
+# file, including this header.  cppcheck skips a comment line only when it is
+# longer than one character, then strips everything from the first "#" - which
+# leaves an empty id and aborts the entire run with
+#     cppcheck: error: Failed to add suppression. No id.
+# Blank lines are skipped correctly, so use those as separators.
 
-# cppcheck does not follow system headers by default, and we do not want it to:
-# the ETL and yaml-cpp headers are not ours to fix.
 missingIncludeSystem
 missingInclude
 
 # Public API.  A library exists to be called from outside this repository, so
-# "nobody in this tree calls it" is not a defect.
+# "nothing in this tree calls it" is not a defect.
 unusedFunction
 
-# fms/limits.hpp exposes its capacities as overridable macros on purpose, and
-# the config parser has plenty of branches a given build never takes.
+# Suppressions that happen not to fire are expected: this list covers several
+# build configurations and only one is checked per run, and cppcheck versions
+# disagree about which findings exist.
 unmatchedSuppression
 
-# Anything the dependency tree drags in.
+# "Consider using std::copy instead of a raw loop" over an etl::vector with a
+# fixed capacity.  The loop is three lines and says what it does; the algorithm
+# call would not be shorter and would not be clearer.
+useStlAlgorithm
+
+# Anything the dependency tree or a build directory drags in.
 *:*/_deps/*
 *:*/build/*
 *:*/build-*/*

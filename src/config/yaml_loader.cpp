@@ -7,6 +7,7 @@
 // its whole body in try/catch, so an exception can never leave this file.
 #include "fms/yaml_loader.hpp"
 
+#include <cstdarg>
 #include <cstdio>
 #include <cstring>
 #include <string>
@@ -16,13 +17,31 @@
 namespace fms::config {
 namespace {
 
-void set_message(Diagnostics& diagnostics, Status status, int line, const char* fmt,
-                 const char* arg0 = "", const char* arg1 = "") {
+// Formats into the fixed diagnostic buffer.
+//
+// This used to take two optional `const char*` defaulted to "" and hand both to
+// snprintf regardless of what the format asked for.  That was safe - excess
+// arguments to snprintf are ignored - but nothing checked that a format with
+// two %s was ever given two arguments, and cppcheck was right to object
+// (wrongPrintfScanfArgNum).  Varargs plus the format attribute turn the
+// convention into something the compiler verifies at every call site.
+#if defined(__GNUC__) || defined(__clang__)
+#define FMS_PRINTF_LIKE(fmt_index, first_arg) \
+  __attribute__((format(printf, fmt_index, first_arg)))
+#else
+#define FMS_PRINTF_LIKE(fmt_index, first_arg)
+#endif
+
+FMS_PRINTF_LIKE(4, 5)
+void set_message(Diagnostics& diagnostics, Status status, int line, const char* fmt, ...) {
   diagnostics.status = status;
   diagnostics.line   = line;
 
   char buffer[limits::kMaxMessageLength + 1];
-  std::snprintf(buffer, sizeof(buffer), fmt, arg0, arg1);
+  std::va_list args;
+  va_start(args, fmt);
+  std::vsnprintf(buffer, sizeof(buffer), fmt, args);
+  va_end(args);
 
   std::size_t length = std::strlen(buffer);
   if (length > diagnostics.message.max_size()) {

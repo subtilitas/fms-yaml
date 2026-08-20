@@ -78,6 +78,10 @@ Status ConsolePort::receive(Input& input, std::uint32_t /*timeout_ms*/) noexcept
     const char*       text   = buffer_ + start;
     const std::size_t length = length_ - start;
 
+    // cppcheck-suppress knownConditionTrueFalse
+    // ...because it is only always true on the one path cppcheck followed, the
+    // one where the trailing-whitespace loop above consumed the entire line.
+    // On every other path length_ > start and this is the blank-line guard.
     if (length == 0) {
       continue;  // blank line: ask again
     }
