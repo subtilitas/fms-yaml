@@ -1,0 +1,140 @@
+# SPDX-License-Identifier: MIT
+#
+# Cut a release from a tag.
+#
+#   git tag -a v0.3.0 -m "..." && git push origin v0.3.0
+#
+# The tag is built and tested on every supported toolchain before anything is
+# published, so a release that exists is a release that passed.  Only the
+# built-in GITHUB_TOKEN is used - no third-party publishing action, no secret
+# to rotate.
+
+name: Release
+
+on:
+  push:
+    tags: ['v*']
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: 'Existing tag to build a release from'
+        required: true
+
+concurrency:
+  group: release-${{ github.ref }}
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+
+env:
+  FETCHCONTENT_BASE_DIR: ${{ github.workspace }}/.deps
+
+jobs:
+  # A tag is not a promise; verify it before publishing anything.
+  verify:
+    name: verify (${{ matrix.name }})
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: true
+      matrix:
+        include:
+          - {name: linux-gcc,    os: ubuntu-24.04,  cc: gcc-13,   cxx: g++-13}
+          - {name: linux-clang,  os: ubuntu-24.04,  cc: clang-18, cxx: clang++-18}
+          - {name: windows-msvc, os: windows-2022}
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          ref: ${{ inputs.tag || github.ref }}
+
+      - name: Configure
+        shell: bash
+        env:
+          CC: ${{ matrix.cc }}
+          CXX: ${{ matrix.cxx }}
+        run: cmake -S . -B build -DCMAKE_BUILD_TYPE=Release
+
+      - name: Build
+        run: cmake --build build --config Release --parallel
+
+      - name: Test
+        run: ctest --test-dir build --build-config Release --output-on-failure
+
+  publish:
+    name: publish
+    needs: verify
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          ref: ${{ inputs.tag || github.ref }}
+          fetch-depth: 0    # release notes are generated from the commit range
+
+      - name: Work out the version
+        id: version
+        run: |
+          tag="${{ inputs.tag || github.ref_name }}"
+          echo "tag=${tag}" >> "$GITHUB_OUTPUT"
+          echo "version=${tag#v}" >> "$GITHUB_OUTPUT"
+
+      # The library is source-distributed: headers plus the translation units
+      # that implement them, and the CMake needed to build them.  There is no
+      # binary to ship - the capacities in fms/limits.hpp are compile-time, so
+      # a prebuilt object would be one arbitrary configuration of many.
+      - name: Package the sources
+        run: |
+          name="fms-yaml-${{ steps.version.outputs.version }}"
+          mkdir -p "dist/${name}"
+          cp -r include src examples docs CMakeLists.txt LICENSE README.md "dist/${name}/"
+          cd dist
+          tar --numeric-owner --owner=0 --group=0 --sort=name \
+              -czf "${name}.tar.gz" "${name}"
+          zip -qr "${name}.zip" "${name}"
+          sha256sum "${name}.tar.gz" "${name}.zip" > SHA256SUMS
+          cat SHA256SUMS
+
+      - name: Write the release notes
+        run: |
+          tag="${{ steps.version.outputs.tag }}"
+          previous="$(git describe --tags --abbrev=0 "${tag}^" 2>/dev/null || true)"
+          {
+            echo "## fms-yaml ${{ steps.version.outputs.version }}"
+            echo
+            if [ -n "${previous}" ]; then
+              echo "### Changes since ${previous}"
+              echo
+              git log --no-merges --pretty='- %s (%h)' "${previous}..${tag}"
+            else
+              echo "First tagged release."
+            fi
+            echo
+            echo "### Verified on"
+            echo
+            echo "- GCC 13 / Linux, Clang 18 / Linux, MSVC 2022 / Windows"
+            echo "- Full \`ctest\` suite, including the no-allocation proof and the"
+            echo "  scripted console session"
+            echo
+            echo "### Checksums"
+            echo
+            echo '```'
+            cat dist/SHA256SUMS
+            echo '```'
+          } > notes.md
+          cat notes.md
+
+      - name: Create the release
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          tag="${{ steps.version.outputs.tag }}"
+          prerelease=""
+          case "${tag}" in
+            *-alpha*|*-beta*|*-rc*) prerelease="--prerelease" ;;
+          esac
+          gh release create "${tag}" \
+            --title "fms-yaml ${{ steps.version.outputs.version }}" \
+            --notes-file notes.md \
+            ${prerelease} \
+            dist/*.tar.gz dist/*.zip dist/SHA256SUMS

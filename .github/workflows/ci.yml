@@ -1,0 +1,333 @@
+# SPDX-License-Identifier: MIT
+#
+# The quality gate.  Five jobs, each answering a different question:
+#
+#   build       does it compile and pass its tests, on three toolchains
+#   coverage    how much of it did the tests actually reach
+#   clang-tidy  what is wrong with code no test happened to run
+#   cppcheck    a second opinion from a different engine
+#   sanitizers  was the code that did run reading memory it owns
+#
+# Nothing here talks to a service outside GitHub.  The repository is private,
+# so the coverage badge is an SVG committed to docs/badges/ rather than a call
+# to shields.io or codecov.io, and the only credential in use is the
+# automatically provided GITHUB_TOKEN.
+
+name: CI
+
+on:
+  push:
+    branches: [main, master]
+    tags-ignore: ['**']        # tags are the release workflow's business
+  pull_request:
+  workflow_dispatch:
+
+# A newer push makes an in-flight run obsolete - except on the default branch,
+# where the coverage job commits and a cancelled run would leave the badge
+# behind the code.
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: ${{ github.ref_name != 'main' && github.ref_name != 'master' }}
+
+permissions:
+  contents: read
+
+env:
+  # One shared location for everything FetchContent pulls, so it can be cached.
+  FETCHCONTENT_BASE_DIR: ${{ github.workspace }}/.deps
+
+jobs:
+  # ---------------------------------------------------------------------------
+  build:
+    name: build (${{ matrix.name }})
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - name: linux-gcc
+            os: ubuntu-24.04
+            cc: gcc-13
+            cxx: g++-13
+            werror: 'ON'
+          - name: linux-clang
+            os: ubuntu-24.04
+            cc: clang-18
+            cxx: clang++-18
+            werror: 'ON'
+          - name: windows-msvc
+            os: windows-2022
+            werror: 'OFF'   # /W4 /WX is unproven here; turn it on once it is green
+
+    steps:
+      - uses: actions/checkout@v6
+
+      - name: Cache fetched dependencies
+        uses: actions/cache@v6
+        with:
+          path: ${{ env.FETCHCONTENT_BASE_DIR }}
+          # Keyed per matrix entry: _deps holds configured build trees, and one
+          # toolchain's are not another's.
+          key: deps-${{ matrix.name }}-${{ hashFiles('CMakeLists.txt') }}
+          restore-keys: deps-${{ matrix.name }}-
+
+      - name: Configure
+        shell: bash
+        env:
+          CC: ${{ matrix.cc }}
+          CXX: ${{ matrix.cxx }}
+        run: |
+          cmake -S . -B build \
+            -DCMAKE_BUILD_TYPE=Release \
+            -DFMS_WARNINGS_AS_ERRORS=${{ matrix.werror }}
+
+      - name: Build
+        run: cmake --build build --config Release --parallel
+
+      - name: Test
+        run: ctest --test-dir build --build-config Release --output-on-failure
+
+      # The configuration is a run-time input, so the only way to know the
+      # shipped YAML is still valid is to run the binary over it.
+      - name: Validate the shipped configuration
+        shell: bash
+        run: |
+          exe=build/car_console
+          [ -x "$exe" ] || exe=build/Release/car_console.exe
+          "$exe" examples/car/car.setup.yaml examples/car/car.machine.yaml --check
+
+  # ---------------------------------------------------------------------------
+  coverage:
+    name: coverage
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: write   # only used on the default branch, to commit the badge
+    steps:
+      - uses: actions/checkout@v6
+
+      - uses: actions/setup-python@v6
+        with:
+          python-version: '3.12'
+
+      - name: Install gcovr
+        run: pip install "gcovr==8.*"
+
+      - name: Cache fetched dependencies
+        uses: actions/cache@v6
+        with:
+          path: ${{ env.FETCHCONTENT_BASE_DIR }}
+          key: deps-coverage-${{ hashFiles('CMakeLists.txt') }}
+          restore-keys: deps-coverage-
+
+      - name: Configure
+        run: |
+          cmake -S . -B build-coverage \
+            -DCMAKE_BUILD_TYPE=Debug \
+            -DFMS_ENABLE_COVERAGE=ON
+
+      - name: Build
+        run: cmake --build build-coverage --parallel
+
+      - name: Test
+        run: |
+          find build-coverage -name '*.gcda' -delete
+          ctest --test-dir build-coverage --output-on-failure
+
+      - name: Report
+        run: |
+          mkdir -p build-coverage/report
+          # --gcov-object-directory keeps gcov's intermediates inside the build
+          # tree instead of scattering .gcov files across the source root.
+          gcovr --config gcovr.cfg \
+                --root . \
+                --gcov-object-directory build-coverage \
+                build-coverage \
+                --json-summary-pretty -o build-coverage/coverage.json \
+                --html-details build-coverage/report/index.html \
+                --cobertura build-coverage/cobertura.xml \
+                --txt
+
+      # --fail-under is the actual gate.  Start at the current number rounded
+      # down and raise it as the tests grow; a floor that never moves is not a
+      # gate, it is decoration.
+      - name: Write the badge and the README table
+        run: |
+          python3 tools/coverage_report.py build-coverage/coverage.json \
+            --readme README.md \
+            --badge docs/badges/coverage.svg \
+            --fail-under 80
+
+      - name: Upload the HTML report
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: coverage-html
+          path: build-coverage/report
+          retention-days: 30
+
+      # Only on the default branch: a pull request from a fork has no write
+      # token, and a PR branch is not what the README should describe anyway.
+      - name: Commit the badge if it moved
+        if: github.event_name == 'push' && (github.ref_name == 'main' || github.ref_name == 'master')
+        run: |
+          if git diff --quiet -- README.md docs/badges/coverage.svg; then
+            echo "coverage unchanged; nothing to commit"
+            exit 0
+          fi
+          git config user.name  "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add README.md docs/badges/coverage.svg
+          # [skip ci] so this commit does not start the workflow that made it.
+          git commit -m "ci: update coverage badge [skip ci]"
+          git push
+
+  # ---------------------------------------------------------------------------
+  clang-tidy:
+    name: clang-tidy
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v6
+
+      # clang-tools-18 is what provides run-clang-tidy-18; the clang-tidy-18
+      # package alone gives only the single-file driver.
+      - name: Install clang-tidy
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y clang-tidy-18 clang-tools-18
+          clang-tidy-18 --version
+
+      - name: Cache fetched dependencies
+        uses: actions/cache@v6
+        with:
+          path: ${{ env.FETCHCONTENT_BASE_DIR }}
+          key: deps-tidy-${{ hashFiles('CMakeLists.txt') }}
+          restore-keys: deps-tidy-
+
+      # clang-tidy needs the exact compile line for every file, which is what
+      # compile_commands.json is.  Nothing is built here; only configured.
+      - name: Configure (compile_commands.json only)
+        run: |
+          cmake -S . -B build-tidy \
+            -DCMAKE_BUILD_TYPE=Debug \
+            -DCMAKE_EXPORT_COMPILE_COMMANDS=ON \
+            -DCMAKE_C_COMPILER=clang-18 \
+            -DCMAKE_CXX_COMPILER=clang++-18
+
+      # yaml-cpp generates headers at build time; without them the loader TU
+      # does not parse.  Building the dependency alone is far cheaper than
+      # building everything.
+      - name: Build the generated dependency headers
+        run: cmake --build build-tidy --target yaml-cpp --parallel
+
+      # Only our own sources.  The checks that gate the job are the ones that
+      # find defects rather than debate style; the rest are printed for the
+      # log.  Tighten the list as findings are cleared.
+      - name: Run clang-tidy
+        run: |
+          run-clang-tidy-18 \
+            -p build-tidy \
+            -clang-tidy-binary clang-tidy-18 \
+            -quiet \
+            -warnings-as-errors='bugprone-*,cert-*,clang-analyzer-*,concurrency-*,performance-*,portability-*' \
+            '^${{ github.workspace }}/src/.*\.cpp$' \
+            | tee clang-tidy.log
+
+      - name: Upload the clang-tidy log
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: clang-tidy-log
+          path: clang-tidy.log
+          retention-days: 30
+
+  # ---------------------------------------------------------------------------
+  cppcheck:
+    name: cppcheck
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v6
+
+      - name: Install cppcheck
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y cppcheck
+          cppcheck --version
+
+      # No compile database on purpose: cppcheck is here as an independent
+      # second reader of the source, and pointing it at src/ and include/ keeps
+      # it away from the dependency tree entirely.
+      - name: Run cppcheck
+        run: |
+          cppcheck \
+            --enable=warning,style,performance,portability \
+            --std=c++17 \
+            --language=c++ \
+            --inline-suppr \
+            --suppressions-list=.cppcheck-suppressions \
+            --suppress=missingIncludeSystem \
+            --check-level=exhaustive \
+            --error-exitcode=1 \
+            --inconclusive \
+            -I include \
+            -D__cplusplus=201703L \
+            --xml --xml-version=2 \
+            src include 2> cppcheck.xml
+        continue-on-error: false
+
+      - name: Summarise findings
+        if: always()
+        run: |
+          python3 - <<'PY'
+          import xml.etree.ElementTree as ET, pathlib, sys
+          p = pathlib.Path("cppcheck.xml")
+          if not p.exists() or not p.read_text().strip():
+              print("no cppcheck output"); sys.exit(0)
+          errors = ET.parse(p).getroot().findall(".//error")
+          if not errors:
+              print("cppcheck: clean"); sys.exit(0)
+          for e in errors:
+              loc = e.find("location")
+              where = f"{loc.get('file')}:{loc.get('line')}" if loc is not None else "-"
+              print(f"{e.get('severity'):12} {e.get('id'):32} {where}\n"
+                    f"             {e.get('msg')}")
+          PY
+
+      - name: Upload the cppcheck report
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: cppcheck-xml
+          path: cppcheck.xml
+          retention-days: 30
+
+  # ---------------------------------------------------------------------------
+  sanitizers:
+    name: sanitizers (ASan + UBSan)
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v6
+
+      - name: Cache fetched dependencies
+        uses: actions/cache@v6
+        with:
+          path: ${{ env.FETCHCONTENT_BASE_DIR }}
+          key: deps-asan-${{ hashFiles('CMakeLists.txt') }}
+          restore-keys: deps-asan-
+
+      - name: Configure
+        run: |
+          cmake -S . -B build-asan \
+            -DCMAKE_BUILD_TYPE=Debug \
+            -DFMS_ENABLE_SANITIZERS=ON
+
+      - name: Build
+        run: cmake --build build-asan --parallel
+
+      # halt_on_error keeps the first report from being buried under the rest,
+      # and detect_leaks matters here specifically: alloc_guard replaces global
+      # operator new, so a mistake in it would leak silently.
+      - name: Test
+        env:
+          ASAN_OPTIONS: detect_leaks=1:halt_on_error=1:abort_on_error=1:strict_string_checks=1
+          UBSAN_OPTIONS: print_stacktrace=1:halt_on_error=1
+        run: ctest --test-dir build-asan --output-on-failure

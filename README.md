@@ -1,5 +1,9 @@
 # fms-yaml
 
+[![CI](https://github.com/subtilitas/fms-yaml/actions/workflows/ci.yml/badge.svg)](https://github.com/subtilitas/fms-yaml/actions/workflows/ci.yml)
+[![coverage](docs/badges/coverage.svg)](#quality-gates)
+[![docs](https://github.com/subtilitas/fms-yaml/actions/workflows/docs.yml/badge.svg)](https://github.com/subtilitas/fms-yaml/wiki)
+
 A finite state machine described entirely by a YAML file, built on the
 [Embedded Template Library](https://github.com/ETLCPP/etl).
 
@@ -321,6 +325,76 @@ Firing a trigger is one binary search in the current state's transition map, the
 the alternatives in file order until a guard holds. Conditions are interned in
 one pool and referenced by index, so an alternative is four bytes rather than two
 fixed-size strings — without that, a full Model would be hundreds of kilobytes.
+
+## Quality gates
+
+Every push runs the same four things, and each one answers a different
+question. Tests say the machine does what the configuration describes;
+coverage says how much of the code the tests actually reached; the static
+analysers say what is wrong with code no test happened to exercise; the
+sanitizers say whether the parts that did run were reading memory they own.
+
+| Gate | Tool | Where |
+|---|---|---|
+| Build + tests | GCC and Clang on Linux, MSVC on Windows | `ci.yml` → `build` |
+| Coverage | `gcovr`, reported below | `ci.yml` → `coverage` |
+| Static analysis | `clang-tidy` (`.clang-tidy`) | `ci.yml` → `clang-tidy` |
+| Static analysis | `cppcheck` | `ci.yml` → `cppcheck` |
+| Runtime analysis | ASan + UBSan over the test suite | `ci.yml` → `sanitizers` |
+
+Reproduce the coverage run exactly as CI does it:
+
+```sh
+pip install gcovr
+bash tools/coverage.sh            # build, test, HTML report
+bash tools/coverage.sh --write    # also rewrite the badge and the table below
+```
+
+The badge is an SVG committed to `docs/badges/`, not a call to a badge service.
+This repository is private, so a hosted badge would have meant either handing
+the source coverage to a third party or embedding a read token in a public URL.
+A file in the repository needs neither, and renders for exactly the people who
+can already see the code.
+
+<!-- coverage:begin -->
+![coverage](docs/badges/coverage.svg)
+
+| Metric | Covered | Total | Coverage |
+| --- | ---: | ---: | ---: |
+| Lines | 979 | 1193 | 82.1% |
+| Branches | 758 | 1100 | 68.9% |
+| Functions | 166 | 181 | 91.7% |
+
+<details><summary>Per file</summary>
+
+| File | Lines | Coverage |
+| --- | ---: | ---: |
+| `src/status.cpp` | 10/32 | 31.2% |
+| `include/fms/port.hpp` | 3/7 | 42.9% |
+| `include/fms/port/console_port.hpp` | 1/2 | 50.0% |
+| `src/alloc_guard.cpp` | 25/37 | 67.6% |
+| `src/port/console_port.cpp` | 50/72 | 69.4% |
+| `src/config/yaml_loader.cpp` | 272/365 | 74.5% |
+| `src/state_machine.cpp` | 49/56 | 87.5% |
+| `src/setup.cpp` | 15/17 | 88.2% |
+| `src/condition.cpp` | 78/88 | 88.6% |
+| `src/model.cpp` | 148/166 | 89.2% |
+| `include/fms/port/memory_port.hpp` | 67/74 | 90.5% |
+| `src/runtime.cpp` | 105/115 | 91.3% |
+| `include/fms/types.hpp` | 24/26 | 92.3% |
+| `src/args.cpp` | 100/104 | 96.2% |
+| `include/fms/args.hpp` | 4/4 | 100.0% |
+| `include/fms/model.hpp` | 7/7 | 100.0% |
+| `include/fms/runtime.hpp` | 3/3 | 100.0% |
+| `include/fms/setup.hpp` | 5/5 | 100.0% |
+| `include/fms/state_machine.hpp` | 7/7 | 100.0% |
+| `include/fms/status.hpp` | 1/1 | 100.0% |
+| `include/fms/yaml_loader.hpp` | 5/5 | 100.0% |
+
+</details>
+
+<sub>Written by the coverage job in `.github/workflows/ci.yml`. Do not edit by hand.</sub>
+<!-- coverage:end -->
 
 ## Layout
 

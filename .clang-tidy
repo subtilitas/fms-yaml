@@ -1,0 +1,129 @@
+# SPDX-License-Identifier: MIT
+#
+# clang-tidy for a freestanding-leaning C++17 codebase: no exceptions outside
+# the YAML firewall, no heap after setup, fixed-capacity ETL containers.
+#
+# The disabled checks below are not disabled because they are wrong in general.
+# They are disabled because they contradict a decision this project has already
+# made deliberately and documented, and a warning that can only ever be
+# suppressed is noise that hides the warnings worth reading.
+
+Checks: >
+  bugprone-*,
+  cert-*,
+  clang-analyzer-*,
+  concurrency-*,
+  cppcoreguidelines-*,
+  misc-*,
+  modernize-*,
+  performance-*,
+  portability-*,
+  readability-*,
+  -bugprone-easily-swappable-parameters,
+  -cppcoreguidelines-avoid-do-while,
+  -cppcoreguidelines-avoid-magic-numbers,
+  -cppcoreguidelines-avoid-non-const-global-variables,
+  -cppcoreguidelines-macro-usage,
+  -cppcoreguidelines-owning-memory,
+  -cppcoreguidelines-pro-bounds-array-to-pointer-decay,
+  -cppcoreguidelines-pro-bounds-constant-array-index,
+  -cppcoreguidelines-pro-bounds-pointer-arithmetic,
+  -cppcoreguidelines-pro-type-vararg,
+  -misc-include-cleaner,
+  -misc-non-private-member-variables-in-classes,
+  -modernize-use-trailing-return-type,
+  -readability-identifier-length,
+  -readability-magic-numbers,
+  -readability-uppercase-literal-suffix
+
+# Why each of those is off:
+#
+#   bugprone-easily-swappable-parameters
+#       Fires on every (StateId, TriggerId) pair, which is the core vocabulary
+#       of this API.  They are distinct strong-ish typedefs by intent.
+#   cppcoreguidelines-avoid-magic-numbers / readability-magic-numbers
+#       parse_int compares against the int32 bounds; naming those constants
+#       makes the range check harder to read, not easier.
+#   cppcoreguidelines-avoid-non-const-global-variables
+#       alloc_guard's counters and the ETL handler flag are process-global by
+#       design: they replace global operator new, which has no other home.
+#   cppcoreguidelines-macro-usage
+#       fms/limits.hpp is a deliberate macro interface so the capacities can be
+#       overridden from the build system.
+#   cppcoreguidelines-owning-memory
+#       alloc_guard is the malloc/free layer itself.
+#   cppcoreguidelines-pro-bounds-pointer-arithmetic / array-to-pointer-decay
+#       Every parser here walks a StringView by (data() + offset, length).
+#       Replacing that with gsl::span is not on the table for a target that has
+#       no GSL.
+#   cppcoreguidelines-pro-type-vararg
+#       snprintf/fprintf are the allocation-free way to format a diagnostic.
+#   misc-include-cleaner
+#       Too eager about transitive ETL headers to be actionable.
+#   modernize-use-trailing-return-type
+#       Purely stylistic and the codebase is consistent the other way.
+
+WarningsAsErrors: ''
+
+# Our headers only.  This deliberately cannot match anything under _deps/:
+# the ETL and yaml-cpp headers are not ours to fix, and diagnostics from them
+# would drown the ones that matter.
+HeaderFilterRegex: '(include|src)/fms/.*\.(hpp|h)$'
+
+FormatStyle: none
+
+CheckOptions:
+  # Match the naming the codebase already uses, so the check is a guard against
+  # drift rather than a demand to rewrite everything.
+  - key: readability-identifier-naming.NamespaceCase
+    value: lower_case
+  - key: readability-identifier-naming.ClassCase
+    value: CamelCase
+  - key: readability-identifier-naming.StructCase
+    value: CamelCase
+  - key: readability-identifier-naming.EnumCase
+    value: CamelCase
+  - key: readability-identifier-naming.EnumConstantCase
+    value: CamelCase
+  - key: readability-identifier-naming.TypeAliasCase
+    value: CamelCase
+  - key: readability-identifier-naming.TypedefCase
+    value: CamelCase
+  - key: readability-identifier-naming.FunctionCase
+    value: lower_case
+  - key: readability-identifier-naming.MethodCase
+    value: lower_case
+  - key: readability-identifier-naming.VariableCase
+    value: lower_case
+  - key: readability-identifier-naming.ParameterCase
+    value: lower_case
+  - key: readability-identifier-naming.PrivateMemberCase
+    value: lower_case
+  - key: readability-identifier-naming.PrivateMemberSuffix
+    value: '_'
+  - key: readability-identifier-naming.GlobalConstantPrefix
+    value: 'k'
+  - key: readability-identifier-naming.GlobalConstantCase
+    value: CamelCase
+  - key: readability-identifier-naming.ConstexprVariablePrefix
+    value: 'k'
+  - key: readability-identifier-naming.ConstexprVariableCase
+    value: CamelCase
+  - key: readability-identifier-naming.MacroDefinitionCase
+    value: UPPER_CASE
+  - key: readability-identifier-naming.MacroDefinitionIgnoredRegexp
+    value: '^[A-Z]+(_[A-Z0-9]+)*_HPP$'
+
+  # link_states() reads three transition spellings in one loop.  Splitting it
+  # would spread one grammar over three functions; 30 leaves room for that and
+  # still catches genuine sprawl.
+  - key: readability-function-cognitive-complexity.Threshold
+    value: '30'
+
+  - key: misc-non-private-member-variables-in-classes.IgnoreClassesWithAllMemberVariablesBeingPublic
+    value: 'true'
+
+  # The project is single-threaded by design; a function-local static is the
+  # right way to spell Args::none().
+  - key: cert-err58-cpp.CheckStaticVariables
+    value: 'false'

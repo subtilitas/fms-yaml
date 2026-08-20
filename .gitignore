@@ -10,3 +10,23 @@ compile_commands.json
 *.exe
 .vscode/
 .idea/
+
+# FetchContent, shared between CI jobs so it can be cached
+.deps/
+
+# Coverage and static analysis output.  docs/badges/coverage.svg is deliberately
+# NOT ignored: it is the badge, and it is meant to be committed.
+*.gcov
+*.gcda
+*.gcno
+coverage.json
+cobertura.xml
+clang-tidy.log
+cppcheck.xml
+
+# Scratch: things moved aside rather than deleted outright
+_to_delete/
+
+# Python bytecode from tools/
+__pycache__/
+*.pyc

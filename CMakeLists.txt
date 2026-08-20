@@ -9,6 +9,13 @@ option(FMS_BUILD_EXAMPLES "Build the example applications"          ON)
 option(FMS_BUILD_CONSOLE  "Build the std::cin/std::cout port"       ON)
 option(FMS_FETCH_DEPS     "Download dependencies with FetchContent" ON)
 
+# Quality-gate options.  Off by default so a plain build stays a plain build;
+# CI turns them on one at a time, because coverage counters and sanitizer
+# shadow memory measure different things and interfere when combined.
+option(FMS_ENABLE_COVERAGE   "Instrument the fms targets for gcov"       OFF)
+option(FMS_ENABLE_SANITIZERS "Build the fms targets with ASan + UBSan"   OFF)
+option(FMS_WARNINGS_AS_ERRORS "Treat compiler warnings as errors"        OFF)
+
 set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 set(CMAKE_CXX_EXTENSIONS OFF)
@@ -46,8 +53,55 @@ endfunction()
 function(fms_warnings target)
   if(MSVC)
     target_compile_options(${target} PRIVATE /W4)
+    if(FMS_WARNINGS_AS_ERRORS)
+      target_compile_options(${target} PRIVATE /WX)
+    endif()
   else()
     target_compile_options(${target} PRIVATE -Wall -Wextra -Wpedantic -Wshadow)
+    if(FMS_WARNINGS_AS_ERRORS)
+      target_compile_options(${target} PRIVATE -Werror)
+    endif()
+  endif()
+endfunction()
+
+# ---------------------------------------------------------------------------
+# Helper: coverage and sanitizer instrumentation.
+#
+# Applied per target rather than with add_compile_options, so the FetchContent
+# dependencies built in this tree stay uninstrumented: ETL, yaml-cpp and doctest
+# are not our code, and counting their lines would only dilute the numbers.
+#
+# The link flags are PUBLIC: an instrumented static library has to pull libgcov
+# (and the sanitizer runtimes) into whatever links it.
+# ---------------------------------------------------------------------------
+function(fms_instrument target)
+  if(FMS_ENABLE_COVERAGE)
+    if(MSVC)
+      message(FATAL_ERROR "FMS_ENABLE_COVERAGE requires GCC or Clang")
+    endif()
+    # -O0 overrides whatever the build type asked for.  Optimised code has no
+    # honest line mapping: inlining and folding make the report a work of
+    # fiction, so a coverage build is always an unoptimised one.
+    target_compile_options(${target} PRIVATE --coverage -O0 -g)
+    target_link_options(${target} PUBLIC --coverage)
+    if(CMAKE_CXX_COMPILER_ID STREQUAL "GNU")
+      # Absolute paths in the .gcno files, so gcovr finds the sources no matter
+      # where it is run from; atomic counters so a parallel test run cannot lose
+      # increments.
+      target_compile_options(${target} PRIVATE -fprofile-abs-path -fprofile-update=atomic)
+    endif()
+  endif()
+
+  if(FMS_ENABLE_SANITIZERS)
+    if(MSVC)
+      message(FATAL_ERROR "FMS_ENABLE_SANITIZERS requires GCC or Clang")
+    endif()
+    target_compile_options(${target} PRIVATE
+      -fsanitize=address,undefined
+      -fno-sanitize-recover=all
+      -fno-omit-frame-pointer
+      -g)
+    target_link_options(${target} PUBLIC -fsanitize=address,undefined)
   endif()
 endfunction()
 
@@ -115,6 +169,7 @@ target_compile_definitions(fms_core PUBLIC ETL_LOG_ERRORS)
 target_link_libraries(fms_core PUBLIC etl::etl)
 fms_disable_exceptions(fms_core)
 fms_warnings(fms_core)
+fms_instrument(fms_core)
 
 # ---------------------------------------------------------------------------
 # fms_config : the *only* place yaml-cpp (and therefore exceptions) is used.
@@ -124,6 +179,7 @@ add_library(fms::config ALIAS fms_config)
 target_link_libraries(fms_config PUBLIC fms_core PRIVATE yaml-cpp::yaml-cpp)
 fms_enable_exceptions(fms_config)
 fms_warnings(fms_config)
+fms_instrument(fms_config)
 
 # ---------------------------------------------------------------------------
 # fms_console : an fms::IPort over std::cin / std::cout.  Separate target
@@ -135,6 +191,7 @@ if(FMS_BUILD_CONSOLE)
   target_link_libraries(fms_console PUBLIC fms_core)
   fms_disable_exceptions(fms_console)
   fms_warnings(fms_console)
+fms_instrument(fms_console)
 endif()
 
 # ---------------------------------------------------------------------------
@@ -145,6 +202,7 @@ add_library(fms::alloc_guard ALIAS fms_alloc_guard)
 target_link_libraries(fms_alloc_guard PUBLIC fms_core)
 fms_disable_exceptions(fms_alloc_guard)
 fms_warnings(fms_alloc_guard)
+fms_instrument(fms_alloc_guard)
 
 # ---------------------------------------------------------------------------
 # Examples
@@ -154,6 +212,7 @@ if(FMS_BUILD_EXAMPLES AND FMS_BUILD_CONSOLE)
   target_link_libraries(car_console PRIVATE fms_core fms_config fms_console)
   fms_disable_exceptions(car_console)
   fms_warnings(car_console)
+fms_instrument(car_console)
   # Note what is deliberately absent here: nothing copies, reads, validates or
   # depends on the YAML.  The configuration is a run-time input, so the build
   # must not have an opinion about it - a machine file the build never opened
@@ -191,7 +250,8 @@ if(FMS_BUILD_TESTS)
     fms_core fms_config fms_alloc_guard doctest::doctest)
   target_compile_definitions(fms_tests PRIVATE
     FMS_SOURCE_DIR="${CMAKE_CURRENT_SOURCE_DIR}")
-  fms_warnings(fms_tests)   # tests keep exceptions: doctest needs them
+    fms_warnings(fms_tests)   # tests keep exceptions: doctest needs them
+  fms_instrument(fms_tests)
   add_test(NAME fms_tests COMMAND fms_tests)
 
   # The console example is exercised through a pipe, which also proves the

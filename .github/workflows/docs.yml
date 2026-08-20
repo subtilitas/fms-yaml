@@ -1,0 +1,74 @@
+# SPDX-License-Identifier: MIT
+#
+# Publishes README.md and docs/ to the repository wiki.
+#
+# ONE-TIME SETUP: a wiki has to exist before anything can be pushed to it.
+# Open https://github.com/subtilitas/fms-yaml/wiki, click "Create the first
+# page", and save anything at all.  Until that is done this workflow fails with
+# "repository not found" - the wiki's git remote simply does not exist yet.
+#
+# No secret is involved: GITHUB_TOKEN with contents:write can push to the wiki
+# of its own repository, and the wiki inherits the repository's visibility, so
+# a private repository keeps a private wiki.
+
+name: Docs
+
+on:
+  push:
+    branches: [main, master]
+    paths:
+      - 'README.md'
+      - 'docs/**'
+      - 'tools/wiki_sync.py'
+      - '.github/workflows/docs.yml'
+  workflow_dispatch:
+
+concurrency:
+  group: docs-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: write
+
+jobs:
+  wiki:
+    name: publish to the wiki
+    runs-on: ubuntu-24.04
+    steps:
+      - name: Check out the repository
+        uses: actions/checkout@v6
+        with:
+          path: repo
+
+      - name: Check out the wiki
+        run: |
+          git clone \
+            "https://x-access-token:${{ secrets.GITHUB_TOKEN }}@github.com/${{ github.repository }}.wiki.git" \
+            wiki
+        # A missing wiki is a setup problem, not a code problem, so say so
+        # rather than failing with git's own message.
+        continue-on-error: true
+
+      - name: Fail with a useful message if the wiki does not exist
+        run: |
+          if [ ! -d wiki/.git ]; then
+            echo "::error::The wiki has no pages yet, so it has no git repository."
+            echo "::error::Create one page at https://github.com/${{ github.repository }}/wiki and re-run."
+            exit 1
+          fi
+
+      - name: Render the pages
+        run: python3 repo/tools/wiki_sync.py --source repo --wiki wiki
+
+      - name: Push
+        working-directory: wiki
+        run: |
+          if git diff --quiet && [ -z "$(git status --porcelain)" ]; then
+            echo "wiki already up to date"
+            exit 0
+          fi
+          git config user.name  "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add -A
+          git commit -m "docs: sync from ${{ github.sha }}"
+          git push

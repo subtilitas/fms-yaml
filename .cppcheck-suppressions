@@ -1,0 +1,24 @@
+# SPDX-License-Identifier: MIT
+#
+# cppcheck suppressions.  Each one names a finding that is correct about the
+# code and wrong about the intent; anything not listed here is a real report.
+# Prefer an inline `// cppcheck-suppress <id>` with a reason when the exception
+# is local to one line - this file is for the ones that are project-wide.
+
+# cppcheck does not follow system headers by default, and we do not want it to:
+# the ETL and yaml-cpp headers are not ours to fix.
+missingIncludeSystem
+missingInclude
+
+# Public API.  A library exists to be called from outside this repository, so
+# "nobody in this tree calls it" is not a defect.
+unusedFunction
+
+# fms/limits.hpp exposes its capacities as overridable macros on purpose, and
+# the config parser has plenty of branches a given build never takes.
+unmatchedSuppression
+
+# Anything the dependency tree drags in.
+*:*/_deps/*
+*:*/build/*
+*:*/build-*/*

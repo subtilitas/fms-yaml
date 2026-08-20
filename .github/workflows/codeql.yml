@@ -1,0 +1,69 @@
+# SPDX-License-Identifier: MIT
+#
+# CodeQL.
+#
+# READ THIS BEFORE WONDERING WHY IT FAILS: code scanning on a *private*
+# repository requires GitHub Advanced Security, which is a paid add-on.  Without
+# it the upload step fails with "Advanced Security must be enabled for this
+# repository to use code scanning", and there is no way around that from here.
+#
+# So this workflow does not run automatically.  Enable it when one of these is
+# true:
+#   * the organisation has GHAS on this repository, or
+#   * the repository is made public (code scanning is free for public repos).
+#
+# To enable: delete the `if: false` line on the job below, or just run it by
+# hand from the Actions tab, which is already possible.
+#
+# The other four analysers in ci.yml (clang-tidy, cppcheck, ASan, UBSan) all run
+# entirely inside the job and need no GitHub feature at all, so the repository
+# is not left without static analysis while this one is off.
+
+name: CodeQL
+
+on:
+  workflow_dispatch:
+  schedule:
+    - cron: '17 4 * * 1'   # Mondays, 04:17 UTC - off the hour, which is busy
+
+permissions:
+  contents: read
+
+env:
+  FETCHCONTENT_BASE_DIR: ${{ github.workspace }}/.deps
+
+jobs:
+  analyze:
+    name: analyze (c-cpp)
+    # Remove this line once Advanced Security is available on the repository.
+    if: ${{ github.event_name == 'workflow_dispatch' }}
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: read
+      security-events: write
+      actions: read
+
+    steps:
+      - uses: actions/checkout@v6
+
+      - name: Initialize CodeQL
+        uses: github/codeql-action/init@v4
+        with:
+          languages: c-cpp
+          build-mode: manual
+          # security-and-quality is the widest set.  A state machine parser is
+          # exactly the kind of code where the quality queries earn their time.
+          queries: security-and-quality
+
+      # Manual build mode: CodeQL watches a real compile, so the dependencies
+      # have to be built too.  Debug and unoptimised, so the extracted IR maps
+      # cleanly back to source.
+      - name: Build
+        run: |
+          cmake -S . -B build-codeql -DCMAKE_BUILD_TYPE=Debug
+          cmake --build build-codeql --parallel
+
+      - name: Perform CodeQL analysis
+        uses: github/codeql-action/analyze@v4
+        with:
+          category: /language:c-cpp
