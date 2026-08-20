@@ -361,8 +361,8 @@ can already see the code.
 
 | Metric | Covered | Total | Coverage |
 | --- | ---: | ---: | ---: |
-| Lines | 981 | 1195 | 82.1% |
-| Branches | 758 | 1100 | 68.9% |
+| Lines | 979 | 1192 | 82.1% |
+| Branches | 760 | 1052 | 72.2% |
 | Functions | 166 | 181 | 91.7% |
 
 <details><summary>Per file</summary>
@@ -374,7 +374,7 @@ can already see the code.
 | `include/fms/port/console_port.hpp` | 1/2 | 50.0% |
 | `src/alloc_guard.cpp` | 25/37 | 67.6% |
 | `src/port/console_port.cpp` | 50/72 | 69.4% |
-| `src/config/yaml_loader.cpp` | 274/367 | 74.7% |
+| `src/config/yaml_loader.cpp` | 272/364 | 74.7% |
 | `src/state_machine.cpp` | 49/56 | 87.5% |
 | `src/setup.cpp` | 15/17 | 88.2% |
 | `src/condition.cpp` | 78/88 | 88.6% |
