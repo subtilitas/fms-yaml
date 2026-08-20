@@ -350,6 +350,16 @@ bash tools/coverage.sh            # build, test, HTML report
 bash tools/coverage.sh --write    # also rewrite the badge and the table below
 ```
 
+Prefer the plain form. The `--write` variant is for checking the rendering, not
+for producing the committed numbers: **the block below belongs to CI**, which
+rewrites it on every push to the default branch. Committing a local run means a
+merge conflict in generated numbers the next time CI publishes.
+
+Line coverage is portable, but branch coverage is not — it counts edges the
+compiler emitted, so it is only comparable within one toolchain. The same tree
+measured 72.2% branches under GCC 13 and 68.9% under GCC 11, with line coverage
+identical at 82.1%. CI's GCC is the reference.
+
 The badge is an SVG committed to `docs/badges/`, not a call to a badge service.
 This repository is private, so a hosted badge would have meant either handing
 the source coverage to a third party or embedding a read token in a public URL.

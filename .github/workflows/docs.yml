@@ -71,4 +71,7 @@ jobs:
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
           git add -A
           git commit -m "docs: sync from ${{ github.sha }}"
+          # Every page here is regenerated wholesale from the repository, so a
+          # rebase onto a concurrent wiki edit cannot lose anything of ours.
+          git pull --rebase --quiet || true
           git push

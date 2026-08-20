@@ -167,19 +167,45 @@ jobs:
 
       # Only on the default branch: a pull request from a fork has no write
       # token, and a PR branch is not what the README should describe anyway.
+      # The branch can move while the tests are running, in which case the push
+      # is rejected.  Rather than rebase a commit whose entire content is
+      # generated - a conflict in numbers nobody wrote - reset to the new tip
+      # and re-run the splice, which rewrites only the marked block and leaves
+      # any prose that landed in the meantime alone.  build-coverage/ is
+      # gitignored, so the measurement survives the reset.
       - name: Commit the badge if it moved
         if: github.event_name == 'push' && (github.ref_name == 'main' || github.ref_name == 'master')
+        env:
+          BRANCH: ${{ github.ref_name }}
         run: |
-          if git diff --quiet -- README.md docs/badges/coverage.svg; then
-            echo "coverage unchanged; nothing to commit"
-            exit 0
-          fi
           git config user.name  "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          git add README.md docs/badges/coverage.svg
-          # [skip ci] so this commit does not start the workflow that made it.
-          git commit -m "ci: update coverage badge [skip ci]"
-          git push
+
+          for attempt in 1 2 3; do
+            git add README.md docs/badges/coverage.svg
+            if git diff --cached --quiet; then
+              echo "coverage unchanged; nothing to commit"
+              exit 0
+            fi
+            # [skip ci] so this commit does not start the workflow that made it.
+            git commit -m "ci: update coverage badge [skip ci]"
+
+            if git push origin "HEAD:${BRANCH}"; then
+              exit 0
+            fi
+
+            echo "::notice::${BRANCH} moved during the coverage run"\
+                 "(attempt ${attempt}/3); replaying onto the new tip."
+            git reset --hard "HEAD~1"
+            git fetch origin "${BRANCH}"
+            git reset --hard "origin/${BRANCH}"
+            python3 tools/coverage_report.py build-coverage/coverage.json \
+              --readme README.md \
+              --badge docs/badges/coverage.svg
+          done
+
+          echo "::warning::Could not push the coverage badge after 3 attempts."\
+               "The next push to ${BRANCH} will refresh it."
 
   # ---------------------------------------------------------------------------
   clang-tidy:
