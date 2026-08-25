@@ -10,8 +10,8 @@ namespace fms {
 namespace {
 
 void etl_error_callback(const etl::exception& error) {
-  std::fprintf(stderr, "[fms] ETL error: %s at %s:%d\n", error.what(), error.file_name(),
-               static_cast<int>(error.line_number()));
+  (void)std::fprintf(stderr, "[fms] ETL error: %s at %s:%d\n", error.what(), error.file_name(),
+                     static_cast<int>(error.line_number()));
   // ETL only reports programming errors here (a fixed container overrun, an
   // out-of-range access).  There is no sensible way to continue and we cannot
   // throw, so stop now and loudly.

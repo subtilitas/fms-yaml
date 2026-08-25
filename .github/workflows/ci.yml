@@ -1,12 +1,16 @@
 # SPDX-License-Identifier: MIT
 #
-# The quality gate.  Five jobs, each answering a different question:
+# The quality gate.  Six jobs, each answering a different question:
 #
 #   build       does it compile and pass its tests, on three toolchains
 #   coverage    how much of it did the tests actually reach
 #   clang-tidy  what is wrong with code no test happened to run
 #   cppcheck    a second opinion from a different engine
+#   lint        is the tooling that runs the gates itself sound
 #   sanitizers  was the code that did run reading memory it owns
+#
+# The two static analysers are invoked through tools/analyze.sh rather than
+# spelled out here, so the flags exist once and a local run is the same run.
 #
 # Nothing here talks to a service outside GitHub.  The repository is private,
 # so the coverage badge is an SVG committed to docs/badges/ rather than a call
@@ -229,34 +233,19 @@ jobs:
           key: deps-tidy-${{ hashFiles('CMakeLists.txt') }}
           restore-keys: deps-tidy-
 
-      # clang-tidy needs the exact compile line for every file, which is what
-      # compile_commands.json is.  Nothing is built here; only configured.
-      - name: Configure (compile_commands.json only)
-        run: |
-          cmake -S . -B build-tidy \
-            -DCMAKE_BUILD_TYPE=Debug \
-            -DCMAKE_EXPORT_COMPILE_COMMANDS=ON \
-            -DCMAKE_C_COMPILER=clang-18 \
-            -DCMAKE_CXX_COMPILER=clang++-18
-
-      # yaml-cpp generates headers at build time; without them the loader TU
-      # does not parse.  Building the dependency alone is far cheaper than
-      # building everything.
-      - name: Build the generated dependency headers
-        run: cmake --build build-tidy --target yaml-cpp --parallel
-
-      # Only our own sources.  The checks that gate the job are the ones that
-      # find defects rather than debate style; the rest are printed for the
-      # log.  Tighten the list as findings are cleared.
+      # The script configures a compile database (clang-tidy needs the exact
+      # compile line for every file), builds yaml-cpp for its generated headers
+      # and nothing else, and runs the analyser over src, tests and examples.
+      # It pipes into tee, which is why it is a script: a workflow `run:` block
+      # gets `bash -e`, without pipefail, so the step would report tee's exit
+      # code - always zero - and the gate would never fail.
       - name: Run clang-tidy
-        run: |
-          run-clang-tidy-18 \
-            -p build-tidy \
-            -clang-tidy-binary clang-tidy-18 \
-            -quiet \
-            -warnings-as-errors='bugprone-*,cert-*,clang-analyzer-*,concurrency-*,performance-*,portability-*' \
-            '^${{ github.workspace }}/src/.*\.cpp$' \
-            | tee clang-tidy.log
+        env:
+          BUILD_DIR: ${{ github.workspace }}/build-tidy
+          RUN_CLANG_TIDY: run-clang-tidy-18
+          CLANG_TIDY_BINARY: clang-tidy-18
+          CXX: clang++-18
+        run: bash tools/analyze.sh clang-tidy
 
       - name: Upload the clang-tidy log
         if: always()
@@ -279,39 +268,11 @@ jobs:
           sudo apt-get install -y cppcheck
           cppcheck --version
 
-      # No compile database on purpose: cppcheck is here as an independent
-      # second reader of the source, and pointing it at src/ and include/ keeps
-      # it away from the dependency tree entirely.
-      #
-      # No --error-exitcode here.  The next step decides what fails, by
-      # severity, because cppcheck's style opinions change between releases and
-      # a new patch version inventing a new style check should not be able to
-      # turn the tree red.  Defects still do.
-      - name: Run cppcheck
-        run: |
-          cppcheck \
-            --enable=warning,style,performance,portability \
-            --std=c++17 \
-            --language=c++ \
-            --inline-suppr \
-            --suppressions-list=.cppcheck-suppressions \
-            --suppress=missingIncludeSystem \
-            --check-level=exhaustive \
-            -I include \
-            --xml --xml-version=2 \
-            src include 2> cppcheck.xml
-          echo "cppcheck finished"
-
       # error and warning fail the job; style, performance and portability are
-      # reported and do not.  Everything lands in the job summary either way.
-      - name: Report findings
-        if: always()
-        run: |
-          # Without pipefail the pipeline reports tee's exit code and the gate
-          # inside the script could never fail the step.
-          set -o pipefail
-          python3 tools/cppcheck_report.py cppcheck.xml \
-            | tee -a "${GITHUB_STEP_SUMMARY:-/dev/stdout}"
+      # reported and do not.  Everything lands in the job summary either way -
+      # the script appends to it when GITHUB_STEP_SUMMARY is set.
+      - name: Run cppcheck
+        run: bash tools/analyze.sh cppcheck
 
       - name: Upload the cppcheck report
         if: always()
@@ -320,6 +281,56 @@ jobs:
           name: cppcheck-xml
           path: cppcheck.xml
           retention-days: 30
+
+  # ---------------------------------------------------------------------------
+  # The gates are only as good as the code that runs them: a workflow with a
+  # typo'd expression, a script that silently swallows an exit code.  Nothing
+  # read tools/ or .github/ until this job existed.  No formatter here - see
+  # ruff.toml for why.
+  lint:
+    name: lint (tooling)
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v6
+
+      - uses: actions/setup-python@v6
+        with:
+          python-version: '3.12'
+
+      # Pinned like gcovr is: ruff is pre-1.0 and adds rules in minor
+      # releases, and a linter that updates itself turns the tree red on
+      # someone else's schedule.
+      - name: Install ruff
+        run: pip install "ruff==0.15.*"
+
+      # Pinned for the same reason as ruff and actionlint.  The runner image
+      # ships a shellcheck of its own, so the version check is not decoration:
+      # it proves the pinned binary is the one earlier on PATH, rather than the
+      # job quietly linting with whatever the image happened to bring.
+      - name: Install shellcheck
+        env:
+          SHELLCHECK_VERSION: '0.10.0'
+        run: |
+          set -o pipefail
+          curl -sSfL \
+            "https://github.com/koalaman/shellcheck/releases/download/v${SHELLCHECK_VERSION}/shellcheck-v${SHELLCHECK_VERSION}.linux.x86_64.tar.xz" \
+            | sudo tar -xJ -C /usr/local/bin --strip-components=1 \
+                "shellcheck-v${SHELLCHECK_VERSION}/shellcheck"
+          shellcheck --version
+          shellcheck --version | grep -qx "version: ${SHELLCHECK_VERSION}"
+
+      - name: Install actionlint
+        env:
+          ACTIONLINT_VERSION: '1.7.12'
+        run: |
+          set -o pipefail
+          curl -sSfL \
+            "https://github.com/rhysd/actionlint/releases/download/v${ACTIONLINT_VERSION}/actionlint_${ACTIONLINT_VERSION}_linux_amd64.tar.gz" \
+            | sudo tar -xz -C /usr/local/bin actionlint
+          actionlint --version
+
+      - name: Lint the tooling
+        run: bash tools/analyze.sh lint
 
   # ---------------------------------------------------------------------------
   sanitizers:

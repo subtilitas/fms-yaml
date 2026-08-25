@@ -328,19 +328,36 @@ fixed-size strings — without that, a full Model would be hundreds of kilobytes
 
 ## Quality gates
 
-Every push runs the same four things, and each one answers a different
+Every push runs the same six things, and each one answers a different
 question. Tests say the machine does what the configuration describes;
 coverage says how much of the code the tests actually reached; the static
-analysers say what is wrong with code no test happened to exercise; the
-sanitizers say whether the parts that did run were reading memory they own.
+analysers say what is wrong with code no test happened to exercise; the lint
+job reads the scripts that run all of that; and the sanitizers say whether the
+parts that did run were reading memory they own.
 
 | Gate | Tool | Where |
 |---|---|---|
 | Build + tests | GCC and Clang on Linux, MSVC on Windows | `ci.yml` → `build` |
 | Coverage | `gcovr`, reported below | `ci.yml` → `coverage` |
-| Static analysis | `clang-tidy` (`.clang-tidy`) | `ci.yml` → `clang-tidy` |
-| Static analysis | `cppcheck` | `ci.yml` → `cppcheck` |
+| Static analysis | `clang-tidy` (`.clang-tidy`), over `src`, `tests` and `examples` | `ci.yml` → `clang-tidy` |
+| Static analysis | `cppcheck` (`.cppcheck-suppressions`) | `ci.yml` → `cppcheck` |
+| Tooling | `ruff` (`ruff.toml`), `shellcheck`, `actionlint` | `ci.yml` → `lint` |
 | Runtime analysis | ASan + UBSan over the test suite | `ci.yml` → `sanitizers` |
+| Deep static analysis | CodeQL, manual only — code scanning on a private repository needs Advanced Security | `codeql.yml` |
+
+Both analysers are invoked through `tools/analyze.sh`, so their flags exist in
+one place and a local run is the run that gates the build:
+
+```sh
+bash tools/analyze.sh              # clang-tidy, cppcheck, and the tooling lint
+bash tools/analyze.sh clang-tidy   # just one of them
+```
+
+A tool that is not installed fails the run rather than being skipped, because a
+gate that could not run has not passed. That is the same reason the clang-tidy
+step is a script at all: it pipes into `tee`, and a workflow `run:` block gets
+`bash -e` without `pipefail`, so the step would report `tee`'s exit code —
+always zero — and the gate would never fail no matter what the analyser found.
 
 Reproduce the coverage run exactly as CI does it:
 

@@ -44,7 +44,7 @@ void* allocate(std::size_t size) noexcept {
     ++g_violations;
     if (g_fatal) {
       // Cannot throw and cannot allocate to report - write and die.
-      std::fputs("[fms] heap allocation after setup phase - aborting\n", stderr);
+      (void)std::fputs("[fms] heap allocation after setup phase - aborting\n", stderr);
       std::abort();
     }
   }
