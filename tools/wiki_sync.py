@@ -61,8 +61,7 @@ def rewrite_links(text: str) -> str:
         text = text.replace(f"({asset})", f"({name})")
 
     # A link back to the README is a link to Home.
-    text = re.sub(r"\(\.?/?README\.md(#[^)]*)?\)", lambda m: f"(Home{m.group(1) or ''})", text)
-    return text
+    return re.sub(r"\(\.?/?README\.md(#[^)]*)?\)", lambda m: f"(Home{m.group(1) or ''})", text)
 
 
 def sidebar() -> str:
@@ -80,7 +79,7 @@ def sidebar() -> str:
 
 def main(argv: list[str]) -> int:
     ap = argparse.ArgumentParser(description=__doc__)
-    ap.add_argument("--source", type=pathlib.Path, default=pathlib.Path("."))
+    ap.add_argument("--source", type=pathlib.Path, default=pathlib.Path())
     ap.add_argument("--wiki", type=pathlib.Path, required=True)
     args = ap.parse_args(argv)
 

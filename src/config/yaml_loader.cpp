@@ -33,6 +33,10 @@ namespace {
 #endif
 
 FMS_PRINTF_LIKE(4, 5)
+// A parameter pack would need a formatting library to consume it, and the
+// point of this function is to build a diagnostic without allocating.  The
+// format attribute above gives back the type checking the ellipsis loses.
+// NOLINTNEXTLINE(cert-dcl50-cpp)
 void set_message(Diagnostics& diagnostics, Status status, int line, const char* fmt, ...) {
   diagnostics.status = status;
   diagnostics.line   = line;
@@ -40,7 +44,7 @@ void set_message(Diagnostics& diagnostics, Status status, int line, const char* 
   char buffer[limits::kMaxMessageLength + 1];
   std::va_list args;
   va_start(args, fmt);
-  std::vsnprintf(buffer, sizeof(buffer), fmt, args);
+  (void)std::vsnprintf(buffer, sizeof(buffer), fmt, args);
   va_end(args);
 
   std::size_t length = std::strlen(buffer);
@@ -436,7 +440,7 @@ bool file_is_readable(const char* path, Diagnostics& diagnostics) {
     set_message(diagnostics, Status::FileNotFound, -1, "cannot open '%s'", path);
     return false;
   }
-  std::fclose(probe);
+  (void)std::fclose(probe);
   return true;
 }
 

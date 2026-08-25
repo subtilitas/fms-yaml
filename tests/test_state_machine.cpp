@@ -165,7 +165,7 @@ TEST_CASE("capacity is a compile-time ceiling, not a suggestion") {
   char       name[16];
 
   for (std::size_t i = 0; i < fms::limits::kMaxStates; ++i) {
-    std::snprintf(name, sizeof(name), "s%zu", i);
+    (void)std::snprintf(name, sizeof(name), "s%zu", i);
     fms::StateId id = fms::kNoState;
     REQUIRE(model.declare_state(sv(name), id) == fms::Status::Ok);
   }

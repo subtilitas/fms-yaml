@@ -73,6 +73,15 @@ HeaderFilterRegex: '(include|src)/fms/.*\.(hpp|h)$'
 FormatStyle: none
 
 CheckOptions:
+  # StringView is a 16-byte view - two words, and the argument buffers it
+  # points into outlive every call that takes one.  The check only fires
+  # because etl::string_view declares its own copy constructor, so clang-tidy
+  # cannot see that the copy is free.  Passing views by value is the whole
+  # point of the type; a const& here would add an indirection to the parse
+  # path and say the opposite of what the API means.
+  - key: performance-unnecessary-value-param.AllowedTypes
+    value: '::fms::StringView'
+
   # Match the naming the codebase already uses, so the check is a guard against
   # drift rather than a demand to rewrite everything.
   - key: readability-identifier-naming.NamespaceCase

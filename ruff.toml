@@ -1,0 +1,24 @@
+# SPDX-License-Identifier: MIT
+#
+# ruff over tools/.  Those three scripts are not shipped with the library, but
+# they are the code that decides whether the other gates pass and what number
+# the README shows, and until this file existed nothing read them at all.
+#
+# No formatter runs in CI.  `ruff format` would undo the hand-aligned comment
+# columns in coverage_report.py, which are deliberate - the same reason
+# .clang-tidy sets FormatStyle: none.
+
+line-length = 100
+
+# 3.10 is the real floor, not a preference: coverage_report.py and wiki_sync.py
+# both call Path.write_text(newline="\n"), and that parameter did not exist
+# before 3.10.  Telling ruff py39 would have had the pyupgrade rules hold the
+# scripts back from syntax they are already entitled to use.
+target-version = "py310"
+
+[lint]
+# Correctness first, then the rules that catch a script quietly doing the wrong
+# thing: B (bugbear) for the mutable-default and loop-variable traps, ARG for a
+# parameter nobody passes any more, PTH for os.path calls in a file that has
+# already decided on pathlib.
+select = ["E", "W", "F", "I", "B", "C4", "UP", "SIM", "RET", "ARG", "PTH"]

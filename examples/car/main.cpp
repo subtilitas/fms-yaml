@@ -38,23 +38,23 @@ void trace(void* user, const fms::TransitionEvent& event) {
   const auto* model = static_cast<const fms::Model*>(user);
 
   if (event.accepted) {
-    std::fprintf(stderr, "  [%s --%s--> %s]\n", model->state_name(event.from),
-                 model->trigger_name(event.trigger), model->state_name(event.to));
+    (void)std::fprintf(stderr, "  [%s --%s--> %s]\n", model->state_name(event.from),
+                       model->trigger_name(event.trigger), model->state_name(event.to));
   }
 }
 
 /// Reports a failed load with the file it came from, so a two-file setup does
 /// not leave you guessing which one is wrong.
 void report(const char* path, fms::Status status, const fms::config::Diagnostics& diagnostics) {
-  std::fprintf(stderr, "%s: %s", path, fms::to_string(status));
+  (void)std::fprintf(stderr, "%s: %s", path, fms::to_string(status));
   if (diagnostics.line > 0) {
-    std::fprintf(stderr, " at line %d", diagnostics.line);
+    (void)std::fprintf(stderr, " at line %d", diagnostics.line);
   }
-  std::fprintf(stderr, ": %s\n", diagnostics.message.c_str());
+  (void)std::fprintf(stderr, ": %s\n", diagnostics.message.c_str());
   if (status == fms::Status::FileNotFound) {
-    std::fputs("hint: pass the paths, e.g. examples/car/car.setup.yaml "
-               "examples/car/car.machine.yaml\n",
-               stderr);
+    (void)std::fputs("hint: pass the paths, e.g. examples/car/car.setup.yaml "
+                     "examples/car/car.machine.yaml\n",
+                     stderr);
   }
 }
 
@@ -131,8 +131,8 @@ int main(int argc, char** argv) {
   // setup must exist in the machine.
   const fms::Status bound = g_machine.init(g_model, g_setup);
   if (!fms::is_ok(bound)) {
-    std::fprintf(stderr, "%s does not fit %s: %s ('%s')\n", setup_path, machine_path,
-                 fms::to_string(bound), g_setup.initial_name().c_str());
+    (void)std::fprintf(stderr, "%s does not fit %s: %s ('%s')\n", setup_path, machine_path,
+                       fms::to_string(bound), g_setup.initial_name().c_str());
     return 1;
   }
 
@@ -144,7 +144,7 @@ int main(int argc, char** argv) {
   fms::port::ConsolePort port(/*prompt=*/!quiet);
 
   if (!fms::is_ok(g_runtime.init(g_machine, port))) {
-    std::fputs("runtime init failed\n", stderr);
+    (void)std::fputs("runtime init failed\n", stderr);
     return 1;
   }
 
@@ -157,7 +157,7 @@ int main(int argc, char** argv) {
 
   const fms::Status started = g_runtime.start();
   if (!fms::is_ok(started)) {
-    std::fprintf(stderr, "start failed: %s\n", fms::to_string(started));
+    (void)std::fprintf(stderr, "start failed: %s\n", fms::to_string(started));
     return 1;
   }
 
@@ -168,15 +168,17 @@ int main(int argc, char** argv) {
       break;
     }
     if (!fms::is_ok(status)) {
-      std::fprintf(stderr, "port error: %s (%s)\n", fms::to_string(status), port.last_error());
+      (void)std::fprintf(stderr, "port error: %s (%s)\n", fms::to_string(status),
+                         port.last_error());
       break;
     }
   }
 
   g_runtime.stop();
-  std::fprintf(stderr, "final state '%s': %u transitions, %u rejected, %u inputs (%u unknown)\n",
-               g_machine.current_name(), g_machine.transition_count(),
-               g_machine.rejection_count(), g_runtime.inputs_received(),
-               g_runtime.inputs_unrouted());
+  (void)std::fprintf(stderr,
+                     "final state '%s': %u transitions, %u rejected, %u inputs (%u unknown)\n",
+                     g_machine.current_name(), g_machine.transition_count(),
+                     g_machine.rejection_count(), g_runtime.inputs_received(),
+                     g_runtime.inputs_unrouted());
   return 0;
 }

@@ -93,7 +93,7 @@ TEST_CASE("malformed arguments are reported, not guessed at") {
   std::memset(long_key, 'x', sizeof(long_key));
   long_key[sizeof(long_key) - 1] = '\0';
   char text[128];
-  std::snprintf(text, sizeof(text), "%s=1", long_key);
+  (void)std::snprintf(text, sizeof(text), "%s=1", long_key);
   CHECK(args.parse(sv(text)) == fms::Status::NameTooLong);
 
   CHECK(args.empty());  // a failed parse leaves nothing behind

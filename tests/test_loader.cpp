@@ -175,6 +175,7 @@ TEST_CASE("oversized names are rejected rather than silently truncated") {
   std::memset(long_name, 'x', sizeof(long_name));
   long_name[sizeof(long_name) - 1] = '\0';
 
-  std::snprintf(yaml, sizeof(yaml), "triggers: [{name: t}]\nstates: [{name: %s}]\n", long_name);
+  (void)std::snprintf(yaml, sizeof(yaml), "triggers: [{name: t}]\nstates: [{name: %s}]\n",
+                      long_name);
   CHECK(fixture.load(yaml) == fms::Status::NameTooLong);
 }
