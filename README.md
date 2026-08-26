@@ -448,3 +448,7 @@ docs/                 schema.md, architecture.md
 
 Targets: `fms_core` (the machine, no transport), `fms_config` (the YAML loader),
 `fms_console` (the `<iostream>` port, optional), `fms_alloc_guard` (optional).
+
+---
+
+In collaboration with Claude Code.
