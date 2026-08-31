@@ -471,9 +471,9 @@ can already see the code.
 
 | Metric | Covered | Total | Coverage |
 | --- | ---: | ---: | ---: |
-| Lines | 981 | 1194 | 82.2% |
-| Branches | 760 | 1052 | 72.2% |
-| Functions | 166 | 181 | 91.7% |
+| Lines | 1368 | 1605 | 85.2% |
+| Branches | 1023 | 1385 | 73.9% |
+| Functions | 199 | 214 | 93.0% |
 
 <details><summary>Per file</summary>
 
@@ -487,19 +487,22 @@ can already see the code.
 | `src/config/yaml_loader.cpp` | 274/366 | 74.9% |
 | `src/state_machine.cpp` | 49/56 | 87.5% |
 | `src/setup.cpp` | 15/17 | 88.2% |
-| `src/condition.cpp` | 78/88 | 88.6% |
 | `src/model.cpp` | 148/166 | 89.2% |
 | `include/fms/port/memory_port.hpp` | 67/74 | 90.5% |
 | `src/runtime.cpp` | 105/115 | 91.3% |
+| `src/inspect/lint.cpp` | 253/277 | 91.3% |
+| `src/condition.cpp` | 81/88 | 92.0% |
 | `include/fms/types.hpp` | 24/26 | 92.3% |
 | `src/args.cpp` | 100/104 | 96.2% |
+| `src/inspect/diagram.cpp` | 105/108 | 97.2% |
 | `include/fms/args.hpp` | 4/4 | 100.0% |
-| `include/fms/model.hpp` | 7/7 | 100.0% |
+| `include/fms/model.hpp` | 9/9 | 100.0% |
 | `include/fms/runtime.hpp` | 3/3 | 100.0% |
 | `include/fms/setup.hpp` | 5/5 | 100.0% |
 | `include/fms/state_machine.hpp` | 7/7 | 100.0% |
 | `include/fms/status.hpp` | 1/1 | 100.0% |
 | `include/fms/yaml_loader.hpp` | 5/5 | 100.0% |
+| `src/inspect/text.hpp` | 24/24 | 100.0% |
 
 </details>
 
