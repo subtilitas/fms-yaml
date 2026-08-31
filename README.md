@@ -1,7 +1,10 @@
 # fms-yaml
 
 [![CI](https://github.com/subtilitas/fms-yaml/actions/workflows/ci.yml/badge.svg)](https://github.com/subtilitas/fms-yaml/actions/workflows/ci.yml)
-[![coverage](docs/badges/coverage.svg)](#quality-gates)
+[![CodeQL](https://github.com/subtilitas/fms-yaml/actions/workflows/codeql.yml/badge.svg)](https://github.com/subtilitas/fms-yaml/actions/workflows/codeql.yml)
+[![sanitizers](https://github.com/subtilitas/fms-yaml/actions/workflows/sanitizers.yml/badge.svg)](https://github.com/subtilitas/fms-yaml/actions/workflows/sanitizers.yml)
+[![lint](https://github.com/subtilitas/fms-yaml/actions/workflows/lint.yml/badge.svg)](https://github.com/subtilitas/fms-yaml/actions/workflows/lint.yml)
+[![coverage](https://codecov.io/gh/subtilitas/fms-yaml/branch/main/graph/badge.svg)](https://codecov.io/gh/subtilitas/fms-yaml)
 [![docs](https://github.com/subtilitas/fms-yaml/actions/workflows/docs.yml/badge.svg)](https://github.com/subtilitas/fms-yaml/wiki)
 
 A finite state machine described entirely by a YAML file, built on the
@@ -413,7 +416,7 @@ Every push runs the same seven things, and each one answers a different
 question. Tests say the machine does what the configuration describes;
 coverage says how much of the code the tests actually reached; the static
 analysers say what is wrong with code no test happened to exercise; the lint
-job reads the scripts and the workflows that run all of that; the sanitizers
+workflow reads the scripts and the workflows that run all of that; the sanitizers
 say whether the parts that did run touched memory they own and stayed inside
 what the language actually defines; and CodeQL reads the whole program at once,
 looking for what a file-at-a-time analyser cannot see.
@@ -421,11 +424,11 @@ looking for what a file-at-a-time analyser cannot see.
 | Gate | Tool | Where |
 |---|---|---|
 | Build + tests | GCC and Clang on Linux, MSVC on Windows | `ci.yml` → `build` |
-| Coverage | `gcovr`, reported below | `ci.yml` → `coverage` |
+| Coverage | `gcovr`, published to codecov.io | `ci.yml` → `coverage` |
 | Static analysis | `clang-tidy` (`.clang-tidy`), over `src`, `tests` and `examples` | `ci.yml` → `clang-tidy` |
 | Static analysis | `cppcheck` (`.cppcheck-suppressions`) | `ci.yml` → `cppcheck` |
-| Tooling | `ruff` (`ruff.toml`) over `tools`, `shellcheck` over the shell, `actionlint` over the workflows | `ci.yml` → `lint` |
-| Runtime analysis | ASan (memory) + UBSan (undefined behaviour) over the test suite | `ci.yml` → `sanitizers` |
+| Tooling | `ruff` (`ruff.toml`) over `tools`, `shellcheck` over the shell, `actionlint` over the workflows | `lint.yml` |
+| Runtime analysis | ASan (memory) + UBSan (undefined behaviour) over the test suite | `sanitizers.yml` |
 | Configuration | the shipped YAML loaded and linted by the real binary | `ctest` → `car_config_check` |
 | Documentation | the README's diagram regenerated and compared | `ctest` → `car_diagram_check` |
 | Deep static analysis | CodeQL (`security-and-quality`) over a real build | `codeql.yml` |
@@ -448,68 +451,23 @@ Reproduce the coverage run exactly as CI does it:
 
 ```sh
 pip install gcovr
-bash tools/coverage.sh            # build, test, HTML report
-bash tools/coverage.sh --write    # also rewrite the badge and the table below
+bash tools/coverage.sh            # build, test, HTML report, per-file summary
 ```
 
-Prefer the plain form. The `--write` variant is for checking the rendering, not
-for producing the committed numbers: **the block below belongs to CI**, which
-rewrites it on every push to the default branch. Committing a local run means a
-merge conflict in generated numbers the next time CI publishes.
+The numbers themselves are published to
+[codecov.io](https://codecov.io/gh/subtilitas/fms-yaml), which renders the badge
+above and keeps the history. Nothing is written back into the tree, so there is
+no generated block to conflict over.
+
+The *floor*, though, stays here: the coverage job runs
+`tools/coverage_report.py --fail-under 80`, so the threshold is an argument in
+a workflow rather than a setting in somebody's account. A reader can find it, a
+fork inherits it, and raising it is a diff like any other.
 
 Line coverage is portable, but branch coverage is not — it counts edges the
 compiler emitted, so it is only comparable within one toolchain. The same tree
 measured 72.2% branches under GCC 13 and 68.9% under GCC 11, with line coverage
 identical at 82.1%. CI's GCC is the reference.
-
-The badge is an SVG committed to `docs/badges/`, not a call to a badge service.
-A file in the repository needs no third-party account, no token and no request
-to anywhere: it is versioned alongside the numbers it describes, so an old
-commit shows the coverage that commit had, and it keeps rendering when a badge
-service changes its URL scheme or disappears.
-
-<!-- coverage:begin -->
-![coverage](docs/badges/coverage.svg)
-
-| Metric | Covered | Total | Coverage |
-| --- | ---: | ---: | ---: |
-| Lines | 1368 | 1605 | 85.2% |
-| Branches | 1023 | 1385 | 73.9% |
-| Functions | 199 | 214 | 93.0% |
-
-<details><summary>Per file</summary>
-
-| File | Lines | Coverage |
-| --- | ---: | ---: |
-| `src/status.cpp` | 10/32 | 31.2% |
-| `include/fms/port.hpp` | 3/7 | 42.9% |
-| `include/fms/port/console_port.hpp` | 1/2 | 50.0% |
-| `src/alloc_guard.cpp` | 25/37 | 67.6% |
-| `src/port/console_port.cpp` | 50/72 | 69.4% |
-| `src/config/yaml_loader.cpp` | 274/366 | 74.9% |
-| `src/state_machine.cpp` | 49/56 | 87.5% |
-| `src/setup.cpp` | 15/17 | 88.2% |
-| `src/model.cpp` | 148/166 | 89.2% |
-| `include/fms/port/memory_port.hpp` | 67/74 | 90.5% |
-| `src/runtime.cpp` | 105/115 | 91.3% |
-| `src/inspect/lint.cpp` | 253/277 | 91.3% |
-| `src/condition.cpp` | 81/88 | 92.0% |
-| `include/fms/types.hpp` | 24/26 | 92.3% |
-| `src/args.cpp` | 100/104 | 96.2% |
-| `src/inspect/diagram.cpp` | 105/108 | 97.2% |
-| `include/fms/args.hpp` | 4/4 | 100.0% |
-| `include/fms/model.hpp` | 9/9 | 100.0% |
-| `include/fms/runtime.hpp` | 3/3 | 100.0% |
-| `include/fms/setup.hpp` | 5/5 | 100.0% |
-| `include/fms/state_machine.hpp` | 7/7 | 100.0% |
-| `include/fms/status.hpp` | 1/1 | 100.0% |
-| `include/fms/yaml_loader.hpp` | 5/5 | 100.0% |
-| `src/inspect/text.hpp` | 24/24 | 100.0% |
-
-</details>
-
-<sub>Written by the coverage job in `.github/workflows/ci.yml`. Do not edit by hand.</sub>
-<!-- coverage:end -->
 
 ## Layout
 

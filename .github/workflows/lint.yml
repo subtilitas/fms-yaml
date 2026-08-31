@@ -1,0 +1,76 @@
+# SPDX-License-Identifier: MIT
+#
+# The tooling gate.
+#
+# The gates are only as good as the code that runs them: a workflow with a
+# typo'd expression, a script that silently swallows an exit code.  ruff reads
+# tools/, shellcheck reads the shell, and actionlint reads the workflow files -
+# including this one, which is how a change to it is checked before it lands.
+# No formatter runs here; see ruff.toml for why.
+#
+# This was a job inside ci.yml until the README began badging each gate on its
+# own.  A GitHub status badge is per workflow and not per job, so a gate that
+# wants a badge has to be a workflow.  The flags still live in tools/analyze.sh,
+# so a local run remains the run that gates the build.
+
+name: Lint
+
+on:
+  push:
+    branches: [main, master]
+    tags-ignore: ['**']        # tags are the release workflow's business
+  pull_request:
+  workflow_dispatch:
+
+concurrency:
+  group: lint-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  lint:
+    name: lint (tooling)
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v6
+
+      - uses: actions/setup-python@v6
+        with:
+          python-version: '3.12'
+
+      # Pinned like gcovr is: ruff is pre-1.0 and adds rules in minor
+      # releases, and a linter that updates itself turns the tree red on
+      # someone else's schedule.
+      - name: Install ruff
+        run: pip install "ruff==0.15.*"
+
+      # Pinned for the same reason as ruff and actionlint.  The runner image
+      # ships a shellcheck of its own, so the version check is not decoration:
+      # it proves the pinned binary is the one earlier on PATH, rather than the
+      # job quietly linting with whatever the image happened to bring.
+      - name: Install shellcheck
+        env:
+          SHELLCHECK_VERSION: '0.10.0'
+        run: |
+          set -o pipefail
+          curl -sSfL \
+            "https://github.com/koalaman/shellcheck/releases/download/v${SHELLCHECK_VERSION}/shellcheck-v${SHELLCHECK_VERSION}.linux.x86_64.tar.xz" \
+            | sudo tar -xJ -C /usr/local/bin --strip-components=1 \
+                "shellcheck-v${SHELLCHECK_VERSION}/shellcheck"
+          shellcheck --version
+          shellcheck --version | grep -qx "version: ${SHELLCHECK_VERSION}"
+
+      - name: Install actionlint
+        env:
+          ACTIONLINT_VERSION: '1.7.12'
+        run: |
+          set -o pipefail
+          curl -sSfL \
+            "https://github.com/rhysd/actionlint/releases/download/v${ACTIONLINT_VERSION}/actionlint_${ACTIONLINT_VERSION}_linux_amd64.tar.gz" \
+            | sudo tar -xz -C /usr/local/bin actionlint
+          actionlint --version
+
+      - name: Lint the tooling
+        run: bash tools/analyze.sh lint

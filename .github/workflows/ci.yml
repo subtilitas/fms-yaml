@@ -1,23 +1,28 @@
 # SPDX-License-Identifier: MIT
 #
-# The quality gate.  Six jobs, each answering a different question:
+# The build gate.  Four jobs, each answering a different question:
 #
 #   build       does it compile and pass its tests, on three toolchains
 #   coverage    how much of it did the tests actually reach
 #   clang-tidy  what is wrong with code no test happened to run
 #   cppcheck    a second opinion from a different engine
-#   lint        is the tooling that runs the gates itself sound
-#   sanitizers  was the code that did run reading memory it owns
+#
+# Two more gates used to live here and now have workflows of their own, because
+# a GitHub status badge is per workflow and not per job, and the README badges
+# each gate separately: sanitizers.yml runs ASan and UBSan over the suite, and
+# lint.yml reads the tooling and these workflow files.
 #
 # The two static analysers are invoked through tools/analyze.sh rather than
 # spelled out here, so the flags exist once and a local run is the same run.
 #
-# Nothing here talks to a service outside GitHub, and the only credential in
-# use is the automatically provided GITHUB_TOKEN.  The coverage badge is an SVG
-# committed to docs/badges/ rather than a call to shields.io or codecov.io: a
-# file in the repository needs no third-party account, it is versioned
-# alongside the numbers it describes, and it keeps rendering when a badge
-# service changes its URL scheme or disappears.
+# Coverage is published to codecov.io.  That is the one thing in this
+# repository that talks to a service outside GitHub - and it still needs no
+# credential: the repository is public, and Codecov accepts a tokenless upload
+# from Actions for a public repository, so there is no secret to rotate here
+# either.  The upload fails the job when it cannot run rather than passing
+# quietly, on the same principle as tools/analyze.sh - a gate that could not
+# run has not passed.  Should tokenless uploads ever start being rate limited,
+# the fix is a CODECOV_TOKEN secret passed to the step as `token:`.
 
 name: CI
 
@@ -28,12 +33,12 @@ on:
   pull_request:
   workflow_dispatch:
 
-# A newer push makes an in-flight run obsolete - except on the default branch,
-# where the coverage job commits and a cancelled run would leave the badge
-# behind the code.
+# A newer push makes an in-flight run obsolete.  Nothing here writes to the
+# repository any more - the coverage numbers leave as an upload rather than as
+# a commit - so there is no branch state a cancelled run could leave behind.
 concurrency:
   group: ci-${{ github.ref }}
-  cancel-in-progress: ${{ github.ref_name != 'main' && github.ref_name != 'master' }}
+  cancel-in-progress: true
 
 permissions:
   contents: read
@@ -106,8 +111,6 @@ jobs:
   coverage:
     name: coverage
     runs-on: ubuntu-24.04
-    permissions:
-      contents: write   # only used on the default branch, to commit the badge
     steps:
       - uses: actions/checkout@v6
 
@@ -153,15 +156,26 @@ jobs:
                 --cobertura build-coverage/cobertura.xml \
                 --txt
 
-      # --fail-under is the actual gate.  Start at the current number rounded
-      # down and raise it as the tests grow; a floor that never moves is not a
-      # gate, it is decoration.
-      - name: Write the badge and the README table
+      # The gate, and it is this repository's own rather than the service's:
+      # codecov can be configured to fail a build too, but a floor that lives
+      # in the tree is one a reader can find and a fork still gets.  Start at
+      # the current number rounded down and raise it as the tests grow; a floor
+      # that never moves is not a gate, it is decoration.
+      - name: Enforce the coverage floor
         run: |
           python3 tools/coverage_report.py build-coverage/coverage.json \
-            --readme README.md \
-            --badge docs/badges/coverage.svg \
             --fail-under 80
+
+      # Cobertura rather than the raw gcov data: it is what gcovr already
+      # writes for the report above, so nothing is measured twice.  No token -
+      # a public repository uploads to Codecov from Actions without one.
+      - name: Upload to Codecov
+        uses: codecov/codecov-action@v5
+        with:
+          files: build-coverage/cobertura.xml
+          # An upload that silently did not happen would leave the badge
+          # showing an old number with a green build underneath it.
+          fail_ci_if_error: true
 
       - name: Upload the HTML report
         if: always()
@@ -170,48 +184,6 @@ jobs:
           name: coverage-html
           path: build-coverage/report
           retention-days: 30
-
-      # Only on the default branch: a pull request from a fork has no write
-      # token, and a PR branch is not what the README should describe anyway.
-      # The branch can move while the tests are running, in which case the push
-      # is rejected.  Rather than rebase a commit whose entire content is
-      # generated - a conflict in numbers nobody wrote - reset to the new tip
-      # and re-run the splice, which rewrites only the marked block and leaves
-      # any prose that landed in the meantime alone.  build-coverage/ is
-      # gitignored, so the measurement survives the reset.
-      - name: Commit the badge if it moved
-        if: github.event_name == 'push' && (github.ref_name == 'main' || github.ref_name == 'master')
-        env:
-          BRANCH: ${{ github.ref_name }}
-        run: |
-          git config user.name  "github-actions[bot]"
-          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-
-          for attempt in 1 2 3; do
-            git add README.md docs/badges/coverage.svg
-            if git diff --cached --quiet; then
-              echo "coverage unchanged; nothing to commit"
-              exit 0
-            fi
-            # [skip ci] so this commit does not start the workflow that made it.
-            git commit -m "ci: update coverage badge [skip ci]"
-
-            if git push origin "HEAD:${BRANCH}"; then
-              exit 0
-            fi
-
-            echo "::notice::${BRANCH} moved during the coverage run"\
-                 "(attempt ${attempt}/3); replaying onto the new tip."
-            git reset --hard "HEAD~1"
-            git fetch origin "${BRANCH}"
-            git reset --hard "origin/${BRANCH}"
-            python3 tools/coverage_report.py build-coverage/coverage.json \
-              --readme README.md \
-              --badge docs/badges/coverage.svg
-          done
-
-          echo "::warning::Could not push the coverage badge after 3 attempts."\
-               "The next push to ${BRANCH} will refresh it."
 
   # ---------------------------------------------------------------------------
   clang-tidy:
@@ -283,85 +255,3 @@ jobs:
           name: cppcheck-xml
           path: cppcheck.xml
           retention-days: 30
-
-  # ---------------------------------------------------------------------------
-  # The gates are only as good as the code that runs them: a workflow with a
-  # typo'd expression, a script that silently swallows an exit code.  Nothing
-  # read tools/ or .github/ until this job existed.  No formatter here - see
-  # ruff.toml for why.
-  lint:
-    name: lint (tooling)
-    runs-on: ubuntu-24.04
-    steps:
-      - uses: actions/checkout@v6
-
-      - uses: actions/setup-python@v6
-        with:
-          python-version: '3.12'
-
-      # Pinned like gcovr is: ruff is pre-1.0 and adds rules in minor
-      # releases, and a linter that updates itself turns the tree red on
-      # someone else's schedule.
-      - name: Install ruff
-        run: pip install "ruff==0.15.*"
-
-      # Pinned for the same reason as ruff and actionlint.  The runner image
-      # ships a shellcheck of its own, so the version check is not decoration:
-      # it proves the pinned binary is the one earlier on PATH, rather than the
-      # job quietly linting with whatever the image happened to bring.
-      - name: Install shellcheck
-        env:
-          SHELLCHECK_VERSION: '0.10.0'
-        run: |
-          set -o pipefail
-          curl -sSfL \
-            "https://github.com/koalaman/shellcheck/releases/download/v${SHELLCHECK_VERSION}/shellcheck-v${SHELLCHECK_VERSION}.linux.x86_64.tar.xz" \
-            | sudo tar -xJ -C /usr/local/bin --strip-components=1 \
-                "shellcheck-v${SHELLCHECK_VERSION}/shellcheck"
-          shellcheck --version
-          shellcheck --version | grep -qx "version: ${SHELLCHECK_VERSION}"
-
-      - name: Install actionlint
-        env:
-          ACTIONLINT_VERSION: '1.7.12'
-        run: |
-          set -o pipefail
-          curl -sSfL \
-            "https://github.com/rhysd/actionlint/releases/download/v${ACTIONLINT_VERSION}/actionlint_${ACTIONLINT_VERSION}_linux_amd64.tar.gz" \
-            | sudo tar -xz -C /usr/local/bin actionlint
-          actionlint --version
-
-      - name: Lint the tooling
-        run: bash tools/analyze.sh lint
-
-  # ---------------------------------------------------------------------------
-  sanitizers:
-    name: sanitizers (ASan + UBSan)
-    runs-on: ubuntu-24.04
-    steps:
-      - uses: actions/checkout@v6
-
-      - name: Cache fetched dependencies
-        uses: actions/cache@v6
-        with:
-          path: ${{ env.FETCHCONTENT_BASE_DIR }}
-          key: deps-asan-${{ hashFiles('CMakeLists.txt') }}
-          restore-keys: deps-asan-
-
-      - name: Configure
-        run: |
-          cmake -S . -B build-asan \
-            -DCMAKE_BUILD_TYPE=Debug \
-            -DFMS_ENABLE_SANITIZERS=ON
-
-      - name: Build
-        run: cmake --build build-asan --parallel
-
-      # halt_on_error keeps the first report from being buried under the rest,
-      # and detect_leaks matters here specifically: alloc_guard replaces global
-      # operator new, so a mistake in it would leak silently.
-      - name: Test
-        env:
-          ASAN_OPTIONS: detect_leaks=1:halt_on_error=1:abort_on_error=1:strict_string_checks=1
-          UBSAN_OPTIONS: print_stacktrace=1:halt_on_error=1
-        run: ctest --test-dir build-asan --output-on-failure

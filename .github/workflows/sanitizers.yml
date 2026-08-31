@@ -1,0 +1,69 @@
+# SPDX-License-Identifier: MIT
+#
+# Runtime analysis: ASan and UBSan over the whole test suite.
+#
+# The static analysers say what is wrong with code no test happened to run.
+# This says the opposite thing about the code that did run: whether it touched
+# memory it owns (ASan) and whether it stayed inside what the language actually
+# defines (UBSan).  Neither question is answerable by reading the source.
+#
+# This was a job inside ci.yml until the README began badging each gate on its
+# own.  A GitHub status badge is per workflow and not per job, so a gate that
+# wants a badge has to be a workflow.
+#
+# Coverage is deliberately not combined with this: counters and sanitizer
+# shadow memory measure different things and interfere, which is why
+# FMS_ENABLE_COVERAGE and FMS_ENABLE_SANITIZERS are separate options that CI
+# turns on one at a time.
+
+name: Sanitizers
+
+on:
+  push:
+    branches: [main, master]
+    tags-ignore: ['**']        # tags are the release workflow's business
+  pull_request:
+  workflow_dispatch:
+
+concurrency:
+  group: sanitizers-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+env:
+  # One shared location for everything FetchContent pulls, so it can be cached.
+  FETCHCONTENT_BASE_DIR: ${{ github.workspace }}/.deps
+
+jobs:
+  sanitizers:
+    name: sanitizers (ASan + UBSan)
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v6
+
+      - name: Cache fetched dependencies
+        uses: actions/cache@v6
+        with:
+          path: ${{ env.FETCHCONTENT_BASE_DIR }}
+          key: deps-asan-${{ hashFiles('CMakeLists.txt') }}
+          restore-keys: deps-asan-
+
+      - name: Configure
+        run: |
+          cmake -S . -B build-asan \
+            -DCMAKE_BUILD_TYPE=Debug \
+            -DFMS_ENABLE_SANITIZERS=ON
+
+      - name: Build
+        run: cmake --build build-asan --parallel
+
+      # halt_on_error keeps the first report from being buried under the rest,
+      # and detect_leaks matters here specifically: alloc_guard replaces global
+      # operator new, so a mistake in it would leak silently.
+      - name: Test
+        env:
+          ASAN_OPTIONS: detect_leaks=1:halt_on_error=1:abort_on_error=1:strict_string_checks=1
+          UBSAN_OPTIONS: print_stacktrace=1:halt_on_error=1
+        run: ctest --test-dir build-asan --output-on-failure

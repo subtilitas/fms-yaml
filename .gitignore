@@ -14,8 +14,9 @@ compile_commands.json
 # FetchContent, shared between CI jobs so it can be cached
 .deps/
 
-# Coverage and static analysis output.  docs/badges/coverage.svg is deliberately
-# NOT ignored: it is the badge, and it is meant to be committed.
+# Coverage and static analysis output.  None of it is committed: the coverage
+# badge and its history live at codecov.io, and the analyser reports are build
+# artefacts that CI uploads.
 *.gcov
 *.gcda
 *.gcno
