@@ -464,6 +464,14 @@ The *floor*, though, stays here: the coverage job runs
 a workflow rather than a setting in somebody's account. A reader can find it, a
 fork inherits it, and raising it is a diff like any other.
 
+The badge and the floor are therefore not quite the same number, and that is
+worth knowing before the two are compared. Both measure `src/` and
+`include/fms/` — `gcovr.cfg` decides that, and the upload is pinned to the one
+report gcovr wrote so the service cannot widen it — but codecov counts a
+partially taken branch as a partial line, while the floor is checked against
+plain line coverage. Codecov's percentage is the lower of the two by
+construction.
+
 Line coverage is portable, but branch coverage is not — it counts edges the
 compiler emitted, so it is only comparable within one toolchain. The same tree
 measured 72.2% branches under GCC 13 and 68.9% under GCC 11, with line coverage
