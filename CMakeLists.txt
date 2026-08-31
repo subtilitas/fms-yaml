@@ -338,7 +338,9 @@ if(FMS_BUILD_TESTS)
     # The diagram in the README is generated from the machine file; this is the
     # check that keeps it that way.  It regenerates the picture and compares,
     # rather than trusting that whoever last changed the YAML also redrew it.
-    if(FMS_BUILD_INSPECT)
+    # The script lives in tools/, which a source distribution does not carry:
+    # keeping the README honest is the repository's business, not a consumer's.
+    if(FMS_BUILD_INSPECT AND EXISTS ${CMAKE_CURRENT_SOURCE_DIR}/tools/diagram_sync.py)
       find_package(Python3 COMPONENTS Interpreter QUIET)
       if(Python3_FOUND)
         add_test(NAME car_diagram_check

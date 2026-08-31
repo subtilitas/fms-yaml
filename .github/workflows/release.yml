@@ -83,11 +83,15 @@ jobs:
       # that implement them, and the CMake needed to build them.  There is no
       # binary to ship - the capacities in fms/limits.hpp are compile-time, so
       # a prebuilt object would be one arbitrary configuration of many.
+      #
+      # tests/ goes too.  FMS_BUILD_TESTS is on by default, so a package
+      # without it does not configure at all, and the notes below promise a
+      # passing suite - which the reader should be able to run.
       - name: Package the sources
         run: |
           name="fms-yaml-${{ steps.version.outputs.version }}"
           mkdir -p "dist/${name}"
-          cp -r include src examples docs CMakeLists.txt LICENSE README.md "dist/${name}/"
+          cp -r include src tests examples docs CMakeLists.txt LICENSE README.md "dist/${name}/"
           cd dist
           tar --numeric-owner --owner=0 --group=0 --sort=name \
               -czf "${name}.tar.gz" "${name}"
