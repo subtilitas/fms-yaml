@@ -2,29 +2,38 @@
 #
 # CodeQL.
 #
-# READ THIS BEFORE WONDERING WHY IT FAILS: code scanning on a *private*
-# repository requires GitHub Advanced Security, which is a paid add-on.  Without
-# it the upload step fails with "Advanced Security must be enabled for this
-# repository to use code scanning", and there is no way around that from here.
+# Code scanning is free on a public repository, which this one is, so this runs
+# on every push and pull request as well as weekly.
 #
-# So this workflow does not run automatically.  Enable it when one of these is
-# true:
-#   * the organisation has GHAS on this repository, or
-#   * the repository is made public (code scanning is free for public repos).
+# IF THIS REPOSITORY IS EVER MADE PRIVATE AGAIN: code scanning then requires
+# GitHub Advanced Security, a paid add-on, and without it the upload step fails
+# with "Advanced Security must be enabled for this repository to use code
+# scanning".  Put the job's `if:` guard back -
 #
-# To enable: delete the `if: false` line on the job below, or just run it by
-# hand from the Actions tab, which is already possible.
+#     if: ${{ github.event_name == 'workflow_dispatch' }}
 #
-# The other four analysers in ci.yml (clang-tidy, cppcheck, ASan, UBSan) all run
-# entirely inside the job and need no GitHub feature at all, so the repository
-# is not left without static analysis while this one is off.
+# - which leaves it runnable by hand from the Actions tab and off everywhere
+# else.
+#
+# The analysers in ci.yml - clang-tidy, cppcheck, ASan + UBSan, and the tooling
+# lint - all run entirely inside their own jobs and need no GitHub feature at
+# all.  This one is the addition that reads across translation units, not the
+# thing the others depend on.
 
 name: CodeQL
 
 on:
+  push:
+    branches: [main, master]
+    tags-ignore: ['**']        # tags are the release workflow's business
+  pull_request:
   workflow_dispatch:
   schedule:
     - cron: '17 4 * * 1'   # Mondays, 04:17 UTC - off the hour, which is busy
+
+concurrency:
+  group: codeql-${{ github.ref }}
+  cancel-in-progress: true
 
 permissions:
   contents: read
@@ -35,8 +44,6 @@ env:
 jobs:
   analyze:
     name: analyze (c-cpp)
-    # Remove this line once Advanced Security is available on the repository.
-    if: ${{ github.event_name == 'workflow_dispatch' }}
     runs-on: ubuntu-24.04
     permissions:
       contents: read

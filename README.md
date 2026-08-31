@@ -409,12 +409,14 @@ fixed-size strings — without that, a full Model would be hundreds of kilobytes
 
 ## Quality gates
 
-Every push runs the same six things, and each one answers a different
+Every push runs the same seven things, and each one answers a different
 question. Tests say the machine does what the configuration describes;
 coverage says how much of the code the tests actually reached; the static
 analysers say what is wrong with code no test happened to exercise; the lint
-job reads the scripts that run all of that; and the sanitizers say whether the
-parts that did run were reading memory they own.
+job reads the scripts and the workflows that run all of that; the sanitizers
+say whether the parts that did run touched memory they own and stayed inside
+what the language actually defines; and CodeQL reads the whole program at once,
+looking for what a file-at-a-time analyser cannot see.
 
 | Gate | Tool | Where |
 |---|---|---|
@@ -422,11 +424,11 @@ parts that did run were reading memory they own.
 | Coverage | `gcovr`, reported below | `ci.yml` → `coverage` |
 | Static analysis | `clang-tidy` (`.clang-tidy`), over `src`, `tests` and `examples` | `ci.yml` → `clang-tidy` |
 | Static analysis | `cppcheck` (`.cppcheck-suppressions`) | `ci.yml` → `cppcheck` |
-| Tooling | `ruff` (`ruff.toml`), `shellcheck`, `actionlint` | `ci.yml` → `lint` |
-| Runtime analysis | ASan + UBSan over the test suite | `ci.yml` → `sanitizers` |
+| Tooling | `ruff` (`ruff.toml`) over `tools`, `shellcheck` over the shell, `actionlint` over the workflows | `ci.yml` → `lint` |
+| Runtime analysis | ASan (memory) + UBSan (undefined behaviour) over the test suite | `ci.yml` → `sanitizers` |
 | Configuration | the shipped YAML loaded and linted by the real binary | `ctest` → `car_config_check` |
 | Documentation | the README's diagram regenerated and compared | `ctest` → `car_diagram_check` |
-| Deep static analysis | CodeQL, manual only — code scanning on a private repository needs Advanced Security | `codeql.yml` |
+| Deep static analysis | CodeQL (`security-and-quality`) over a real build | `codeql.yml` |
 
 Both analysers are invoked through `tools/analyze.sh`, so their flags exist in
 one place and a local run is the run that gates the build:
@@ -461,10 +463,10 @@ measured 72.2% branches under GCC 13 and 68.9% under GCC 11, with line coverage
 identical at 82.1%. CI's GCC is the reference.
 
 The badge is an SVG committed to `docs/badges/`, not a call to a badge service.
-This repository is private, so a hosted badge would have meant either handing
-the source coverage to a third party or embedding a read token in a public URL.
-A file in the repository needs neither, and renders for exactly the people who
-can already see the code.
+A file in the repository needs no third-party account, no token and no request
+to anywhere: it is versioned alongside the numbers it describes, so an old
+commit shows the coverage that commit had, and it keeps rendering when a badge
+service changes its URL scheme or disappears.
 
 <!-- coverage:begin -->
 ![coverage](docs/badges/coverage.svg)
