@@ -1,19 +1,20 @@
 #!/usr/bin/env bash
 # SPDX-License-Identifier: MIT
 #
-# Local coverage run - the same sequence the CI coverage job uses, so a number
-# you see here is the number that ends up in the README.
+# Local coverage run - the same sequence the CI coverage job uses, and the same
+# per-file summary it gates on, so a number you see here is the number that
+# decides the build.
 #
 #   tools/coverage.sh              build, test, report to build-coverage/
-#   tools/coverage.sh --write      also rewrite the README badge and table
+#
+# Publishing the result is codecov.io's job and happens only from CI.  There is
+# nothing to write back into the tree, which is why this takes no --write.
 #
 # Needs gcovr (pip install gcovr) and a GCC or Clang toolchain.
 set -euo pipefail
 
 root="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 build="${BUILD_DIR:-${root}/build-coverage}"
-write=0
-[[ "${1:-}" == "--write" ]] && write=1
 
 cd "${root}"
 
@@ -43,10 +44,7 @@ gcovr --config "${root}/gcovr.cfg" \
   --html-details "${build}/report/index.html" \
   --txt
 
-if [[ "${write}" == 1 ]]; then
-  python3 tools/coverage_report.py "${build}/coverage.json" \
-    --readme README.md --badge docs/badges/coverage.svg
-fi
+python3 tools/coverage_report.py "${build}/coverage.json"
 
 echo
 echo "HTML report: ${build}/report/index.html"

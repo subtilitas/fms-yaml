@@ -1,16 +1,17 @@
 # SPDX-License-Identifier: MIT
 #
-# ruff over tools/.  Those three scripts are not shipped with the library, but
-# they are the code that decides whether the other gates pass and what number
-# the README shows, and until this file existed nothing read them at all.
+# ruff over tools/.  Those scripts are not shipped with the library, but they
+# are the code that decides whether the other gates pass, and until this file
+# existed nothing read them at all.
 #
-# No formatter runs in CI.  `ruff format` would undo the hand-aligned comment
-# columns in coverage_report.py, which are deliberate - the same reason
-# .clang-tidy sets FormatStyle: none.
+# No formatter runs in CI.  `ruff format` would undo alignment that is there on
+# purpose - the columns in a report the scripts print, and the comment columns
+# in analyze.sh's neighbours - the same reason .clang-tidy sets
+# FormatStyle: none.
 
 line-length = 100
 
-# 3.10 is the real floor, not a preference: coverage_report.py and wiki_sync.py
+# 3.10 is the real floor, not a preference: wiki_sync.py and diagram_sync.py
 # both call Path.write_text(newline="\n"), and that parameter did not exist
 # before 3.10.  Telling ruff py39 would have had the pyupgrade rules hold the
 # scripts back from syntax they are already entitled to use.

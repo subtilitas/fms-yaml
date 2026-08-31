@@ -4,8 +4,8 @@
 
 A wiki is a flat git repository: every page is a top-level `.md` file and the
 page name is the file name.  So the docs cannot simply be copied - the paths
-that work in the repository (`docs/schema.md`, `docs/badges/coverage.svg`) are
-all wrong once the directory structure is gone.  This rewrites them.
+that work in the repository (`docs/schema.md`) are all wrong once the directory
+structure is gone.  This rewrites them.
 
 Usage:
     python3 tools/wiki_sync.py --source . --wiki /path/to/checked-out.wiki
@@ -16,7 +16,6 @@ from __future__ import annotations
 import argparse
 import pathlib
 import re
-import shutil
 import sys
 
 # repository path -> wiki page name.  Order matters only for the sidebar.
@@ -25,9 +24,6 @@ PAGES: dict[str, str] = {
     "docs/architecture.md": "Architecture",
     "docs/schema.md": "Schema",
 }
-
-# Files copied verbatim, keeping their name, because pages link to them.
-ASSETS = ["docs/badges/coverage.svg"]
 
 BANNER = (
     "<!-- Generated from {source} by tools/wiki_sync.py. "
@@ -54,11 +50,6 @@ def rewrite_links(text: str) -> str:
             lambda m, p=page: f"({p}{m.group(1) or ''})",
             text,
         )
-
-    # Assets live beside the pages once copied, so strip their directory.
-    for asset in ASSETS:
-        name = pathlib.PurePosixPath(asset).name
-        text = text.replace(f"({asset})", f"({name})")
 
     # A link back to the README is a link to Home.
     return re.sub(r"\(\.?/?README\.md(#[^)]*)?\)", lambda m: f"(Home{m.group(1) or ''})", text)
@@ -98,13 +89,6 @@ def main(argv: list[str]) -> int:
         target = args.wiki / f"{page}.md"
         target.write_text(BANNER.format(source=repo_path) + body, encoding="utf-8", newline="\n")
         written.append(target.name)
-
-    for asset in ASSETS:
-        src = args.source / asset
-        if src.exists():
-            dst = args.wiki / pathlib.PurePosixPath(asset).name
-            shutil.copyfile(src, dst)
-            written.append(dst.name)
 
     (args.wiki / "_Sidebar.md").write_text(sidebar(), encoding="utf-8", newline="\n")
     written.append("_Sidebar.md")
