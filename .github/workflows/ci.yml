@@ -12,10 +12,12 @@
 # The two static analysers are invoked through tools/analyze.sh rather than
 # spelled out here, so the flags exist once and a local run is the same run.
 #
-# Nothing here talks to a service outside GitHub.  The repository is private,
-# so the coverage badge is an SVG committed to docs/badges/ rather than a call
-# to shields.io or codecov.io, and the only credential in use is the
-# automatically provided GITHUB_TOKEN.
+# Nothing here talks to a service outside GitHub, and the only credential in
+# use is the automatically provided GITHUB_TOKEN.  The coverage badge is an SVG
+# committed to docs/badges/ rather than a call to shields.io or codecov.io: a
+# file in the repository needs no third-party account, it is versioned
+# alongside the numbers it describes, and it keeps rendering when a badge
+# service changes its URL scheme or disappears.
 
 name: CI
 
