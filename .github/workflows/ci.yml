@@ -173,6 +173,13 @@ jobs:
         uses: codecov/codecov-action@v5
         with:
           files: build-coverage/cobertura.xml
+          # Naming a file is not enough: the action still searches the
+          # workspace and would find the raw gcov data next to it, which has
+          # not been through gcovr.cfg's filter.  The first upload without this
+          # measured 35 files instead of 24 - tests/ and examples/ included -
+          # so the badge reported a number this repository deliberately does
+          # not measure.
+          disable_search: true
           # An upload that silently did not happen would leave the badge
           # showing an old number with a green build underneath it.
           fail_ci_if_error: true
