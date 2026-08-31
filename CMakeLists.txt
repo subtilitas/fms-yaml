@@ -7,6 +7,7 @@ project(fms_yaml VERSION 0.2.0 LANGUAGES CXX)
 option(FMS_BUILD_TESTS    "Build unit tests"                        ON)
 option(FMS_BUILD_EXAMPLES "Build the example applications"          ON)
 option(FMS_BUILD_CONSOLE  "Build the std::cin/std::cout port"       ON)
+option(FMS_BUILD_INSPECT  "Build the linter and the diagram exporter"  ON)
 option(FMS_FETCH_DEPS     "Download dependencies with FetchContent" ON)
 
 # Quality-gate options.  Off by default so a plain build stays a plain build;
@@ -225,6 +226,23 @@ fms_instrument(fms_console)
 endif()
 
 # ---------------------------------------------------------------------------
+# fms_inspect : reads a machine and reports on it - the linter and the diagram
+# exporter.  Its own target because neither is needed to *run* a machine: a
+# firmware build links fms_core and stops there, and nothing here is reachable
+# from the run phase.
+# ---------------------------------------------------------------------------
+if(FMS_BUILD_INSPECT)
+  add_library(fms_inspect STATIC
+    src/inspect/lint.cpp
+    src/inspect/diagram.cpp)
+  add_library(fms::inspect ALIAS fms_inspect)
+  target_link_libraries(fms_inspect PUBLIC fms_core)
+  fms_disable_exceptions(fms_inspect)
+  fms_warnings(fms_inspect)
+  fms_instrument(fms_inspect)
+endif()
+
+# ---------------------------------------------------------------------------
 # fms_alloc_guard : optional link-in that traps heap use after setup.
 # ---------------------------------------------------------------------------
 add_library(fms_alloc_guard STATIC src/alloc_guard.cpp)
@@ -240,6 +258,12 @@ fms_instrument(fms_alloc_guard)
 if(FMS_BUILD_EXAMPLES AND FMS_BUILD_CONSOLE)
   add_executable(car_console examples/car/main.cpp)
   target_link_libraries(car_console PRIVATE fms_core fms_config fms_console)
+  if(FMS_BUILD_INSPECT)
+    # --lint and --export exist only when the analysis library is built; the
+    # example says so at compile time rather than shipping flags that do nothing.
+    target_link_libraries(car_console PRIVATE fms_inspect)
+    target_compile_definitions(car_console PRIVATE FMS_WITH_INSPECT=1)
+  endif()
   fms_disable_exceptions(car_console)
   fms_warnings(car_console)
 fms_instrument(car_console)
@@ -279,6 +303,10 @@ if(FMS_BUILD_TESTS)
     tests/test_no_alloc.cpp)
   target_link_libraries(fms_tests PRIVATE
     fms_core fms_config fms_alloc_guard doctest::doctest)
+  if(FMS_BUILD_INSPECT)
+    target_sources(fms_tests PRIVATE tests/test_lint.cpp tests/test_diagram.cpp)
+    target_link_libraries(fms_tests PRIVATE fms_inspect)
+  endif()
   target_compile_definitions(fms_tests PRIVATE
     FMS_SOURCE_DIR="${CMAKE_CURRENT_SOURCE_DIR}")
     fms_warnings(fms_tests)   # tests keep exceptions: doctest needs them
@@ -299,10 +327,30 @@ if(FMS_BUILD_TESTS)
               -P ${CMAKE_CURRENT_SOURCE_DIR}/tests/run_console_test.cmake)
 
     # Loading the shipped configuration is itself a test, run by the binary.
+    # --check also lints what it loaded, so this fails on a machine that is
+    # valid and still cannot mean what it says.
     add_test(NAME car_config_check
       COMMAND car_console
               ${CMAKE_CURRENT_SOURCE_DIR}/examples/car/car.setup.yaml
               ${CMAKE_CURRENT_SOURCE_DIR}/examples/car/car.machine.yaml
               --check)
+
+    # The diagram in the README is generated from the machine file; this is the
+    # check that keeps it that way.  It regenerates the picture and compares,
+    # rather than trusting that whoever last changed the YAML also redrew it.
+    if(FMS_BUILD_INSPECT)
+      find_package(Python3 COMPONENTS Interpreter QUIET)
+      if(Python3_FOUND)
+        add_test(NAME car_diagram_check
+          COMMAND ${Python3_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/tools/diagram_sync.py
+                  --check
+                  --binary  $<TARGET_FILE:car_console>
+                  --setup   ${CMAKE_CURRENT_SOURCE_DIR}/examples/car/car.setup.yaml
+                  --machine ${CMAKE_CURRENT_SOURCE_DIR}/examples/car/car.machine.yaml
+                  --readme  ${CMAKE_CURRENT_SOURCE_DIR}/README.md)
+      else()
+        message(STATUS "python3 not found: the README diagram will not be checked")
+      endif()
+    endif()
   endif()
 endif()

@@ -60,6 +60,82 @@ car_console car.setup.yaml car.machine.yaml --check
 
 The `car_config_check` ctest case is exactly that command.
 
+## A second pass, over the machine rather than the text
+
+The loader's question is whether a file can become a `Model`. It checks syntax,
+schema, every name and every reference, and refuses anything that fails. What it
+cannot ask is whether the machine that came out is the machine anybody wanted -
+a state nothing leads to is a perfectly well-formed state.
+
+That is a different question, asked of a different thing: the loaded `Model`,
+not the text. So it lives in its own pass, `fms::lint::analyse`, in its own
+target, and it never rejects anything. It appends findings to a fixed-capacity
+`Report` and hands it back.
+
+Three decisions shaped it.
+
+**Severity belongs to the check, not to the loader.** A dead-end state is
+exactly right for a terminal state and exactly wrong for one that forgot its way
+back; nothing in the file distinguishes them. So the linter says which kind of
+thing it found and how seriously that kind is normally taken, and the caller
+decides what to do - `--check` exits 1 on an error and prints the warnings.
+Making the loader refuse these would have meant refusing legitimate machines.
+
+**Reachability ignores guards.** `fault` is often entered only when
+`severity >= 2` holds. Whether that ever happens is a question about the sender,
+not about the configuration: the file provides a path, so the state is
+reachable. Treating an unsatisfiable guard as an unreachable state would report
+one mistake as two, in two places, and the second report would move as soon as
+the first was fixed.
+
+**The guard checker proves rather than guesses.** Conditions on different
+arguments cannot contradict each other, so the question is asked once per
+argument: fold every condition that mentions it into a range plus the values
+excluded from it by name plus any word it must or must not be, then ask whether
+anything is left. `pedal > 60` with `pedal < 5` closes the range;
+`gear >= 1, gear <= 1, gear != 1` empties it by exhaustion; `mode == sport` with
+`mode > 2` is impossible because a numeric comparison is false unless the value
+parses as an integer and a text literal never does - which is a fact about
+`Condition::evaluate`, not a guess about intent. Anything it cannot prove
+impossible it leaves alone. A linter that reported suspicions would be one
+people learned to ignore.
+
+Shadowing is the same argument applied to ordering: if every condition of an
+earlier alternative also appears in a later one, the later one holds only when
+the earlier one already did, so the earlier one wins every time. Identical
+guards fall out of that as the special case they are; the interesting case is an
+earlier guard that asks for *less*, which is much harder to see by eye.
+
+One finding per alternative, and the most fundamental one wins. An alternative
+behind an unguarded fallback is not also reported for its impossible guard -
+fixing the reachability is what makes that guard matter again.
+
+## The diagram is generated
+
+A diagram drawn beside a configuration is a second description of the same
+behaviour, and the first time the two disagree it is the diagram that is wrong
+while still looking authoritative. `fms::diagram::render` therefore builds the
+picture from the loaded `Model`, one edge per alternative.
+
+It writes to a sink one fragment at a time rather than into a buffer. There is
+no maximum diagram size that way, and nothing allocates: the console example
+passes a sink that writes to stdout, the tests pass one that appends to a
+string. The only escaping is per format - Mermaid reads a label as HTML, so
+`pedal > 5` needs its angle bracket spelled `#gt;` or the label is swallowed as
+a tag; a Dot label is a quoted string, so the quote and the backslash are what
+have to be escaped.
+
+The fallback is labelled `[otherwise]` when a trigger has more than one
+alternative. File order is what makes an unguarded alternative the fallback, and
+order is the one thing a picture cannot show - without the label the diagram
+would suggest two edges that both always apply.
+
+The README's diagram is the output of that renderer, spliced in by
+`tools/diagram_sync.py`. The script's default is `--check`, not `--write`: CI
+regenerates the picture and fails on a difference, rather than committing a new
+one. A file that rewrites itself is a file whose diff nobody reads, and here the
+diff - the machine changed, and this is how - is the whole point.
+
 ## The two phases
 
 ```
@@ -221,25 +297,28 @@ input and blocks only there. No threads, no callbacks, no queues, no clock.
 
 ## Writing a port
 
-Seven methods, five of which have usable defaults:
+Eight methods, five of which have usable defaults:
 
 | Method | Called | Must do |
 |---|---|---|
 | `configure(io)` | once, from `start()`, before `open()` | keep what you need from the setup file's `io` block |
 | `open()` | once, from `start()` | connect / open the device |
 | `listen(channel)` | once per trigger, from `start()` | subscribe, or ignore it |
-| `receive(channel, timeout_ms)` | every `service()` | block up to the timeout; set `channel` |
+| `receive(input, timeout_ms)` | every `service()` | block up to the timeout; fill in `input` |
 | `publish_state(state)` | on every state change | announce it |
 | `publish_error(message)` | on a refused trigger or unknown channel | report it |
 | `close()` | from `stop()` | disconnect |
+| `last_error()` | after a failure, by the caller | describe it; never return null |
 
 Rules:
 
 * No method may throw or allocate.
 * `receive()` is the only call that may block, and only up to `timeout_ms`.
-* The view handed to `receive()` must stay valid until the next call on the port
-  — the port owns the buffer, the core only reads it. `ConsolePort` returns a
-  view into its own line buffer; `MemoryPort` into a member `Channel`.
+* `receive()` fills in an `Input`: the `channel` something arrived on, and the
+  `arguments` it carried (`key=value key=value`, empty when there are none).
+* Both views in that `Input` must stay valid until the next call on the port —
+  the port owns the buffer, the core only reads it. `ConsolePort` points them
+  into its own line buffer; `MemoryPort` into the entry it is handing out.
 * Return `Status::Timeout` when nothing arrived (normal), `Status::EndOfInput`
   when the source is exhausted (`Runtime::service()` passes it up so the caller
   can leave the loop).
@@ -317,8 +396,11 @@ nm -C libfms_config.a | grep -cE '__cxa_throw|_Unwind_Resume'    # non-zero: the
 | `test_loader.cpp` | every machine-file schema and reference error, malformed YAML, oversized names |
 | `test_runtime.cpp` | channel routing, error feedback, `configure()` before `open()`, trace hook, end of input |
 | `test_no_alloc.cpp` | the heap trap |
+| `test_lint.cpp` | every check, on machines that load without complaint, plus a full report |
+| `test_diagram.cpp` | both formats, guard labels, the fallback label, and the escaping |
 | `car_console_pipe` (ctest) | the example driven by a scripted session on stdin, stdout compared with `tests/car_session.expected` |
-| `car_config_check` (ctest) | the shipped configuration loaded by the real loader, via `--check` |
+| `car_config_check` (ctest) | the shipped configuration loaded *and linted* by the real binary, via `--check` |
+| `car_diagram_check` (ctest) | the README's diagram regenerated from the machine file and compared |
 
 ## Threading
 

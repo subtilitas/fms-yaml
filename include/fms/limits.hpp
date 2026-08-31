@@ -57,6 +57,13 @@
 #define FMS_MAX_MESSAGE_LENGTH 127
 #endif
 
+// How many findings one lint run records before it gives up.  This is not part
+// of the machine - a Model does not contain a report - so only a caller that
+// asks for one pays for it.
+#ifndef FMS_MAX_FINDINGS
+#define FMS_MAX_FINDINGS 32
+#endif
+
 namespace fms::limits {
 
 inline constexpr std::size_t kMaxStates              = FMS_MAX_STATES;
@@ -69,6 +76,7 @@ inline constexpr std::size_t kMaxArguments           = FMS_MAX_ARGUMENTS;
 inline constexpr std::size_t kMaxAlternatives        = FMS_MAX_ALTERNATIVES;
 inline constexpr std::size_t kMaxConditionsPerGuard  = FMS_MAX_CONDITIONS_PER_GUARD;
 inline constexpr std::size_t kMaxConditions          = FMS_MAX_CONDITIONS;
+inline constexpr std::size_t kMaxFindings            = FMS_MAX_FINDINGS;
 
 }  // namespace fms::limits
 

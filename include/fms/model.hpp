@@ -20,7 +20,7 @@
 // list of alternatives instead of a single target.
 //
 // Conditions are interned in one pool and referenced by index, so an alternative
-// costs four bytes rather than embedding two fixed-size strings.  Without that,
+// costs six bytes rather than embedding two fixed-size strings.  Without that,
 // a fully populated Model would be hundreds of kilobytes.
 #ifndef FMS_MODEL_HPP
 #define FMS_MODEL_HPP

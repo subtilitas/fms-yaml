@@ -23,7 +23,7 @@ No actions, no timers, no nesting, and no application code in the decision.
 | States and triggers stored with their dependencies in a flat map | `flat_map<StateId, StateNode>`, and inside each node `flat_map<TriggerId, StateId>` |
 | No dynamic allocation after setup | fixed capacities from `fms/limits.hpp`; proven by `tests/test_no_alloc.cpp`, which replaces global `operator new` and traps it |
 | No exceptions | everything is compiled `-fno-exceptions`; the one TU that talks to yaml-cpp is the exception firewall and returns `Status` |
-| Interface left open | the core has no transport dependency at all — `fms::IPort` is seven virtual methods, and the shipped implementations are a console port and an in-memory test port |
+| Interface left open | the core has no transport dependency at all — `fms::IPort` is eight virtual methods, and the shipped implementations are a console port and an in-memory test port |
 | Config is a run-time input | the build never opens the YAML: no copying, no parsing, no dependency. `--check` validates a config by running the binary |
 
 ## Build
@@ -111,6 +111,7 @@ machine : 'car', 7 states, 10 triggers, 7 guard conditions
   self_test       3 trigger(s) ignition_off self_test_passed(2) self_test_failed
   standing        4 trigger(s) ignition_off throttle_pressed(2) engine_fault(2) brake_pressed
   ...
+lint    : clean
 ok
 ```
 
@@ -122,31 +123,109 @@ $ ./build/car_console car.setup.yaml broken.machine.yaml --check
 broken.machine.yaml: unknown state at line 50: target state 'nowhere' does not exist
 ```
 
+## What a valid file can still get wrong
+
+The loader answers one question — *is this a valid description?* — and refuses
+anything it cannot turn into a machine. A file can pass all of that and still
+say something nobody meant: a state nothing leads to, an alternative written
+after the fallback that swallows it, a guard whose conditions cannot both hold.
+None of those are file errors, so the loader is right not to reject them. They
+are still worth being told about.
+
+So there is a second pass over the loaded machine. `--lint` runs it alone,
+`--check` runs it after the description, and both exit 1 if anything it found
+was an error:
+
+```
+$ ./build/car_console broken.setup.yaml broken.machine.yaml --lint
+lint    : 6 finding(s)
+  error   unreachable-state       state 'orphan' cannot be reached from the initial state
+  error   unreachable-state       state 'terminal' cannot be reached from the initial state
+  warning dead-end-state          state 'terminal' has no transition to another state
+  warning unused-trigger          trigger 'never_used' is declared but no state lists it
+  error   impossible-guard        state 'idle', trigger 'go', alternative 1: the guard can never hold (pedal > 60 and pedal < 5)
+  error   unreachable-alternative state 'idle', trigger 'go', alternative 4: alternative 3 has no guard, so nothing after it is reached
+```
+
+| Check | | Why |
+|---|---|---|
+| `unreachable-state` | error | no sequence of triggers leads there from `fsm.initial` |
+| `unreachable-alternative` | error | it comes after an unguarded one, which always holds |
+| `impossible-guard` | error | the ANDed conditions contradict each other |
+| `shadowed-alternative` | error | an earlier alternative holds every time this one would |
+| `dead-end-state` | warning | nothing leads out of it — often a terminal state, so only a warning |
+| `unused-trigger` | warning | declared, but no state lists it: input on its channel is always refused |
+
+Severity is a property of the check, not of the machine: the two warnings can be
+exactly what was meant, and the four errors describe behaviour no input can
+reach. Reachability ignores guards on purpose — whether `errors == 0` ever holds
+is a question about the sender, not about the file, and conflating the two would
+report one mistake twice.
+
+The guard checker reports only what it can prove. It folds every condition on
+one argument into a range plus the values excluded from it, so `pedal > 60` with
+`pedal < 5` is caught, and so is `gear >= 1, gear <= 1, gear != 1`. A guard it
+calls possible may still never hold in practice; that is the sender's business.
+
+## Drawing the machine
+
+`--export` renders the loaded machine, so the picture cannot disagree with the
+file it came from:
+
+```sh
+./build/car_console car.setup.yaml car.machine.yaml --export mermaid   # for Markdown
+./build/car_console car.setup.yaml car.machine.yaml --export dot | dot -Tsvg > car.svg
+```
+
+One edge per alternative, labelled with its trigger and its guard. An unguarded
+alternative among several is labelled `[otherwise]`, because file order is what
+makes it the fallback and order is the one thing a diagram cannot show.
+
+The diagram below is the output of that command, spliced into this file by
+`tools/diagram_sync.py --write`. The `car_diagram_check` test regenerates it and
+fails if the two have drifted — so a machine change that was not redrawn is a
+red build, not a picture that quietly lies.
+
 ## The car machine
 
+The picture below is not drawn: `--export mermaid` renders it from the loaded
+machine, and the `car_diagram_check` test fails if what is committed here has
+drifted from what the YAML says.
+
+<!-- diagram:begin -->
 ```mermaid
 stateDiagram-v2
     [*] --> power_off
     power_off --> self_test: ignition_on
-    self_test --> standing: self_test_passed
-    self_test --> fault: self_test_failed
     self_test --> power_off: ignition_off
-    standing --> accelerating: throttle_pressed
-    standing --> standing: brake_pressed
-    standing --> fault: engine_fault
+    self_test --> standing: self_test_passed [errors == 0]
+    self_test --> fault: self_test_passed [otherwise]
+    self_test --> fault: self_test_failed
     standing --> power_off: ignition_off
+    standing --> accelerating: throttle_pressed [pedal #gt; 5]
+    standing --> standing: throttle_pressed [otherwise]
+    standing --> fault: engine_fault [severity #gt;= 2]
+    standing --> standing: engine_fault [otherwise]
+    standing --> standing: brake_pressed
     accelerating --> coasting: throttle_released
+    accelerating --> fault: engine_fault [severity #gt;= 2]
+    accelerating --> accelerating: engine_fault [otherwise]
     accelerating --> braking: brake_pressed
-    accelerating --> fault: engine_fault
-    coasting --> accelerating: throttle_pressed
-    coasting --> braking: brake_pressed
-    coasting --> standing: vehicle_stopped
+    coasting --> accelerating: throttle_pressed [pedal #gt; 5]
+    coasting --> coasting: throttle_pressed [otherwise]
     coasting --> fault: engine_fault
-    braking --> standing: vehicle_stopped
-    braking --> coasting: brake_released
+    coasting --> braking: brake_pressed
+    coasting --> standing: vehicle_stopped [speed == 0]
+    coasting --> coasting: vehicle_stopped [otherwise]
     braking --> fault: engine_fault
+    braking --> coasting: brake_released
+    braking --> standing: vehicle_stopped [speed == 0]
     fault --> power_off: ignition_off
 ```
+
+<sub>Generated from the machine file by `tools/diagram_sync.py`, and checked by the
+`car_diagram_check` test.  Change the YAML, then run `python3 tools/diagram_sync.py --write`.</sub>
+<!-- diagram:end -->
 
 Which subsystem raises what:
 
@@ -287,9 +366,11 @@ class MyPort final : public fms::IPort {
   // Called once per trigger during start(): subscribe, open a filter, ignore it.
   fms::Status listen(fms::StringView channel) noexcept override { ... }
 
-  // Block up to timeout_ms.  Point `channel` at storage you own; it must stay
-  // valid until the next call.  Timeout when nothing arrived, EndOfInput at EOF.
-  fms::Status receive(fms::StringView& channel, std::uint32_t timeout_ms) noexcept override { ... }
+  // Block up to timeout_ms and fill in `input`: the channel it arrived on, and
+  // the `key=value` text it carried, if any.  Both are views into storage you
+  // own, and must stay valid until the next call on the port.  Timeout when
+  // nothing arrived, EndOfInput at EOF.
+  fms::Status receive(fms::Input& input, std::uint32_t timeout_ms) noexcept override { ... }
 
   fms::Status publish_state(fms::StringView state) noexcept override { ... }
   fms::Status publish_error(fms::StringView message) noexcept override { ... }
@@ -323,7 +404,7 @@ Model                                              the behaviour
 
 Firing a trigger is one binary search in the current state's transition map, then
 the alternatives in file order until a guard holds. Conditions are interned in
-one pool and referenced by index, so an alternative is four bytes rather than two
+one pool and referenced by index, so an alternative is six bytes rather than two
 fixed-size strings — without that, a full Model would be hundreds of kilobytes.
 
 ## Quality gates
@@ -343,6 +424,8 @@ parts that did run were reading memory they own.
 | Static analysis | `cppcheck` (`.cppcheck-suppressions`) | `ci.yml` → `cppcheck` |
 | Tooling | `ruff` (`ruff.toml`), `shellcheck`, `actionlint` | `ci.yml` → `lint` |
 | Runtime analysis | ASan + UBSan over the test suite | `ci.yml` → `sanitizers` |
+| Configuration | the shipped YAML loaded and linted by the real binary | `ctest` → `car_config_check` |
+| Documentation | the README's diagram regenerated and compared | `ctest` → `car_diagram_check` |
 | Deep static analysis | CodeQL, manual only — code scanning on a private repository needs Advanced Security | `codeql.yml` |
 
 Both analysers are invoked through `tools/analyze.sh`, so their flags exist in
@@ -440,14 +523,21 @@ include/fms/
   port/memory_port.hpp    in-memory, for tests
   yaml_loader.hpp     both config front ends (the exception firewall)
   alloc_guard.hpp     optional heap trap
+  inspect/lint.hpp    what is wrong with a machine that still loads
+  inspect/diagram.hpp the machine as mermaid or graphviz
 src/                  implementations (src/config/yaml_loader.cpp is the only -fexceptions TU)
 examples/car/         car.setup.yaml + car.machine.yaml + a main() that adds no behaviour
 tests/                doctest suites, the no-allocation proof, and a scripted console session
+tools/                the scripts the quality gates run
 docs/                 schema.md, architecture.md
 ```
 
 Targets: `fms_core` (the machine, no transport), `fms_config` (the YAML loader),
-`fms_console` (the `<iostream>` port, optional), `fms_alloc_guard` (optional).
+`fms_console` (the `<iostream>` port, optional), `fms_inspect` (the linter and
+the diagram exporter, optional), `fms_alloc_guard` (optional).
+
+`fms_inspect` reads a machine and reports on it; nothing in it is reachable from
+the run phase, so a firmware build links `fms_core` and stops there.
 
 ---
 

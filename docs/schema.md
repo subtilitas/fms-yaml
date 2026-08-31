@@ -20,6 +20,12 @@ surfaces at start-up rather than at compile time — so every diagnostic carries
 line number, and the example has a `--check` mode that loads a pair of files,
 reports what they describe and exits.
 
+Everything below is what the loader enforces. A file can satisfy all of it and
+still describe a machine nobody meant - an unreachable state, an alternative
+behind a fallback, a guard that cannot hold. Those are not schema errors, so
+they are reported separately, by the linter `--check` and `--lint` run over the
+loaded machine; see [what a valid file can still get wrong](../README.md#what-a-valid-file-can-still-get-wrong).
+
 ---
 
 # The setup file

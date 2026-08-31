@@ -2,7 +2,8 @@
 //
 // Car state machine on the console.
 //
-//   ./car_console [setup.yaml] [machine.yaml] [--quiet] [--check]
+//   ./car_console [setup.yaml] [machine.yaml] [--quiet] [--check] [--lint]
+//                 [--export mermaid|dot]
 //
 // The YAML is read here, when the program runs, and nowhere else: the build does
 // not copy it, parse it or depend on it.  So the paths are yours to choose -
@@ -11,8 +12,14 @@
 //   cd examples/car && ../../build/car_console
 //   ./build/car_console examples/car/car.setup.yaml examples/car/car.machine.yaml
 //
-// --check loads both files, reports what they describe and exits, which is how
-// you validate a configuration without building anything.
+// --check loads both files, reports what they describe, runs the linter over
+// the result and exits, which is how you validate a configuration without
+// building anything.  --lint is the same without the description, for a script
+// that only wants the exit code.  Both exit 1 when the linter found an error.
+//
+// --export writes the machine as a diagram - mermaid for a Markdown file,
+// dot for graphviz - so the picture is generated from the configuration rather
+// than drawn beside it and left to rot.
 //
 // The configuration comes in two files: the setup says where this instance runs
 // and where it starts, the machine says what it does.  Point the same machine
@@ -31,6 +38,11 @@
 #include "fms/port/console_port.hpp"
 #include "fms/runtime.hpp"
 #include "fms/yaml_loader.hpp"
+
+#if defined(FMS_WITH_INSPECT)
+#include "fms/inspect/diagram.hpp"
+#include "fms/inspect/lint.hpp"
+#endif
 
 namespace {
 
@@ -78,8 +90,42 @@ void describe(const fms::Setup& setup, const fms::Model& model, const fms::State
     }
     std::putchar('\n');
   }
-  std::puts("ok");
 }
+
+#if defined(FMS_WITH_INSPECT)
+
+/// Runs the linter over the loaded machine and prints what it found.  Returns
+/// false when any finding was an error, which is the program's exit code.
+bool report_lint(const fms::Model& model, fms::StateId initial) {
+  fms::lint::Report report;
+  const fms::Status status = fms::lint::analyse(model, initial, report);
+
+  if (report.empty()) {
+    std::puts("lint    : clean");
+    return true;
+  }
+
+  std::printf("lint    : %zu finding(s)\n", report.size());
+
+  fms::Message text;
+  for (const fms::lint::Finding& finding : report) {
+    fms::lint::describe(model, finding, text);
+    std::printf("  %-7s %-23s %s\n",
+                fms::lint::to_string(fms::lint::severity_of(finding.check)),
+                fms::lint::to_string(finding.check), text.c_str());
+  }
+  if (status == fms::Status::CapacityExceeded) {
+    std::puts("  ... report full; raise FMS_MAX_FINDINGS to see the rest");
+  }
+  return !fms::lint::has_errors(report);
+}
+
+/// The diagram arrives in fragments, in order; there is nothing to assemble.
+void write_fragment(void* /*user*/, fms::StringView text) {
+  (void)std::fwrite(text.data(), 1, text.size(), stdout);
+}
+
+#endif  // defined(FMS_WITH_INSPECT)
 
 // The whole system, statically allocated.
 fms::Setup        g_setup;
@@ -94,13 +140,38 @@ int main(int argc, char** argv) {
   const char* machine_path = "car.machine.yaml";
   bool        quiet        = false;
   bool        check_only   = false;
+  bool        lint_only    = false;
   int         positional   = 0;
+
+#if defined(FMS_WITH_INSPECT)
+  bool                 export_diagram = false;
+  fms::diagram::Format format         = fms::diagram::Format::Mermaid;
+#endif
 
   for (int i = 1; i < argc; ++i) {
     if (std::strcmp(argv[i], "--quiet") == 0) {
       quiet = true;
     } else if (std::strcmp(argv[i], "--check") == 0) {
       check_only = true;
+    } else if (std::strcmp(argv[i], "--lint") == 0) {
+#if defined(FMS_WITH_INSPECT)
+      lint_only = true;
+#else
+      (void)std::fputs("built without fms_inspect: --lint is unavailable\n", stderr);
+      return 2;
+#endif
+    } else if (std::strcmp(argv[i], "--export") == 0) {
+#if defined(FMS_WITH_INSPECT)
+      const char* name = (i + 1 < argc) ? argv[++i] : "";
+      if (!fms::diagram::parse_format(fms::StringView(name, std::strlen(name)), format)) {
+        (void)std::fputs("usage: --export mermaid|dot\n", stderr);
+        return 2;
+      }
+      export_diagram = true;
+#else
+      (void)std::fputs("built without fms_inspect: --export is unavailable\n", stderr);
+      return 2;
+#endif
     } else if (positional == 0) {
       setup_path = argv[i];
       ++positional;
@@ -136,8 +207,27 @@ int main(int argc, char** argv) {
     return 1;
   }
 
-  if (check_only) {
-    describe(g_setup, g_model, g_machine);
+#if defined(FMS_WITH_INSPECT)
+  // A diagram is about the machine alone, but the entry arrow comes from the
+  // setup - which is why this needs both files, like everything else here.
+  if (export_diagram) {
+    fms::diagram::render(g_model, g_machine.initial(), format, &write_fragment, nullptr);
+    return 0;
+  }
+#endif
+
+  if (check_only || lint_only) {
+    if (check_only) {
+      describe(g_setup, g_model, g_machine);
+    }
+#if defined(FMS_WITH_INSPECT)
+    if (!report_lint(g_model, g_machine.initial())) {
+      return 1;
+    }
+#endif
+    if (check_only) {
+      std::puts("ok");
+    }
     return 0;
   }
 
