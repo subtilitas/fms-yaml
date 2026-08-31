@@ -2,11 +2,12 @@
 # SPDX-License-Identifier: MIT
 """Turn a gcovr JSON summary into a checked-in badge and a README table.
 
-The repository is private, so a coverage badge cannot come from a public
-service: shields.io would need a token, and codecov.io would need the source
-uploaded to a third party.  Instead the badge is an SVG committed next to the
-README, written by CI on every push to the default branch.  Nothing leaves the
-repository, and the badge renders for anyone who can already see the code.
+The badge is an SVG committed next to the README, written by CI on every push
+to the default branch, rather than a call to a badge service: a file in the
+repository needs no third-party account, no token and no request to anywhere,
+it is versioned alongside the numbers it describes - so an old commit shows the
+coverage that commit had - and it keeps rendering when a service changes its
+URL scheme or disappears.
 
 Usage:
     gcovr --json-summary-pretty -o coverage.json
