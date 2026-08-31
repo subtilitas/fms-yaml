@@ -1,0 +1,20 @@
+# SPDX-License-Identifier: MIT
+#
+# One answer to "what is a line ending in this repository", so that two gits
+# looking at the same working tree agree about it.
+#
+# Without this the answer comes from core.autocrlf, which is a property of the
+# git installation rather than of the project: Git for Windows sets it in its
+# system config, a git on Linux does not.  A tree checked out by one then reads
+# as wholly modified to the other - every line of every file, insertions exactly
+# equal to deletions - and a commit made from the other side puts CRLF into the
+# history for good.
+#
+#   text=auto  git decides what is text and normalises it to LF on the way in,
+#              so a CRLF working file still hashes to the LF blob it came from.
+#              Adding this file therefore dirties nothing that was already
+#              correct: it only stops the two sides disagreeing.
+#   eol=lf     and it is written back out as LF on checkout on every platform,
+#              overriding autocrlf.  Which is what a .sh with a `#!` line needs,
+#              and a workflow `run:` block is a shell script too.
+* text=auto eol=lf
