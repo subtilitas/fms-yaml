@@ -1,0 +1,27 @@
+stateDiagram-v2
+    [*] --> power_off
+    power_off --> self_test: ignition_on
+    self_test --> power_off: ignition_off
+    self_test --> standing: self_test_passed [errors == 0]
+    self_test --> fault: self_test_passed [otherwise]
+    self_test --> fault: self_test_failed
+    standing --> power_off: ignition_off
+    standing --> accelerating: throttle_pressed [pedal #gt; 5]
+    standing --> standing: throttle_pressed [otherwise]
+    standing --> fault: engine_fault [severity #gt;= 2]
+    standing --> standing: engine_fault [otherwise]
+    standing --> standing: brake_pressed
+    accelerating --> coasting: throttle_released
+    accelerating --> fault: engine_fault [severity #gt;= 2]
+    accelerating --> accelerating: engine_fault [otherwise]
+    accelerating --> braking: brake_pressed
+    coasting --> accelerating: throttle_pressed [pedal #gt; 5]
+    coasting --> coasting: throttle_pressed [otherwise]
+    coasting --> fault: engine_fault
+    coasting --> braking: brake_pressed
+    coasting --> standing: vehicle_stopped [speed == 0]
+    coasting --> coasting: vehicle_stopped [otherwise]
+    braking --> fault: engine_fault
+    braking --> coasting: brake_released
+    braking --> standing: vehicle_stopped [speed == 0]
+    fault --> power_off: ignition_off
