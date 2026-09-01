@@ -453,3 +453,85 @@ TEST_CASE("the shipped car machine is clean") {
 }
 
 }  // namespace
+
+TEST_CASE("an impossible guard is described with the conditions that contradict") {
+  // The finding names coordinates; describe() has to resolve them back into the
+  // guard as it was written, or the reader has to go and find it themselves.
+  const Linted linted(R"(
+triggers:
+  - {name: go}
+states:
+  - name: idle
+    transitions:
+      go:
+        - {when: ["pedal > 60", "pedal < 5"], target: moving}
+        - {target: idle}
+  - name: moving
+    transitions:
+      go: idle
+)",
+                      "idle");
+
+  REQUIRE(linted.count(fms::lint::Check::ImpossibleGuard) == 1);
+  const fms::Message message = linted.text(fms::lint::Check::ImpossibleGuard);
+
+  CHECK(std::strstr(message.c_str(), "state 'idle'") != nullptr);
+  CHECK(std::strstr(message.c_str(), "trigger 'go'") != nullptr);
+  CHECK(std::strstr(message.c_str(), "alternative 1") != nullptr);
+  CHECK(std::strstr(message.c_str(), "can never hold") != nullptr);
+  // Both halves of the contradiction, joined - one alone would not explain it.
+  CHECK(std::strstr(message.c_str(), "pedal > 60") != nullptr);
+  CHECK(std::strstr(message.c_str(), "pedal < 5") != nullptr);
+  CHECK(std::strstr(message.c_str(), " and ") != nullptr);
+}
+
+TEST_CASE("a shadowed alternative is described by the one that beats it") {
+  const Linted linted(R"(
+triggers:
+  - {name: go}
+states:
+  - name: idle
+    transitions:
+      go:
+        - {when: "pedal > 5", target: moving}
+        - {when: ["pedal > 5", "gear == 1"], target: idle}
+        - {target: idle}
+  - name: moving
+    transitions:
+      go: idle
+)",
+                      "idle");
+
+  REQUIRE(linted.count(fms::lint::Check::ShadowedAlternative) == 1);
+  const fms::lint::Finding* finding = linted.first(fms::lint::Check::ShadowedAlternative);
+  REQUIRE(finding != nullptr);
+  CHECK(finding->alternative == 2);
+  CHECK(finding->other == 1);
+
+  const fms::Message message = linted.text(fms::lint::Check::ShadowedAlternative);
+  CHECK(std::strstr(message.c_str(), "alternative 2") != nullptr);
+  CHECK(std::strstr(message.c_str(), "alternative 1") != nullptr);
+  CHECK(std::strstr(message.c_str(), "holds whenever this one would") != nullptr);
+}
+
+TEST_CASE("a text guard that cannot hold is described with its words") {
+  const Linted linted(R"(
+triggers:
+  - {name: go}
+states:
+  - name: idle
+    transitions:
+      go:
+        - {when: ["mode == sport", "mode != sport"], target: moving}
+        - {target: idle}
+  - name: moving
+    transitions:
+      go: idle
+)",
+                      "idle");
+
+  REQUIRE(linted.count(fms::lint::Check::ImpossibleGuard) == 1);
+  const fms::Message message = linted.text(fms::lint::Check::ImpossibleGuard);
+  CHECK(std::strstr(message.c_str(), "mode == sport") != nullptr);
+  CHECK(std::strstr(message.c_str(), "mode != sport") != nullptr);
+}

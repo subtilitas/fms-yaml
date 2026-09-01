@@ -5,6 +5,7 @@
 #include <doctest/doctest.h>
 
 #include <cstring>
+#include <string>
 
 #include "fms/state_machine.hpp"
 
@@ -171,4 +172,104 @@ TEST_CASE("capacity is a compile-time ceiling, not a suggestion") {
   }
   fms::StateId overflow = fms::kNoState;
   CHECK(model.declare_state(sv("one_too_many"), overflow) == fms::Status::CapacityExceeded);
+}
+
+TEST_CASE("a machine is started once, and only after it is bound") {
+  Fixture fixture;
+
+  SUBCASE("start twice") {
+    REQUIRE(fixture.machine.start() == fms::Status::Ok);
+    CHECK(fixture.machine.start() == fms::Status::AlreadyInitialised);
+    // The second start must not have moved it back to the initial state.
+    CHECK(fixture.machine.current() == fixture.standing);
+  }
+  SUBCASE("rebinding a running machine") {
+    REQUIRE(fixture.machine.start() == fms::Status::Ok);
+    CHECK(fixture.machine.init(fixture.model, fixture.setup) == fms::Status::AlreadyInitialised);
+  }
+}
+
+TEST_CASE("an unbound machine cannot be started") {
+  fms::StateMachine machine;
+  CHECK(machine.start() == fms::Status::NotInitialised);
+  CHECK(machine.model() == nullptr);
+  CHECK(machine.setup() == nullptr);
+  CHECK(machine.current() == fms::kNoState);
+  CHECK(std::strcmp(machine.current_name(), "<uninitialised>") == 0);
+}
+
+TEST_CASE("the fire overloads are the same decision with less to type") {
+  Fixture fixture;
+  REQUIRE(fixture.machine.start() == fms::Status::Ok);
+
+  SUBCASE("trigger only") {
+    CHECK(fixture.machine.fire(fixture.throttle) == fms::Status::Ok);
+    CHECK(fixture.machine.current() == fixture.accelerating);
+  }
+  SUBCASE("trigger and arguments") {
+    fms::Args args;
+    REQUIRE(args.parse(sv("pedal=60")) == fms::Status::Ok);
+    CHECK(fixture.machine.fire(fixture.throttle, args) == fms::Status::Ok);
+    CHECK(fixture.machine.current() == fixture.accelerating);
+  }
+  SUBCASE("trigger and event") {
+    fms::TransitionEvent event;
+    CHECK(fixture.machine.fire(fixture.throttle, event) == fms::Status::Ok);
+    CHECK(event.accepted);
+    CHECK(event.from == fixture.standing);
+    CHECK(event.to == fixture.accelerating);
+    CHECK(event.trigger == fixture.throttle);
+  }
+}
+
+TEST_CASE("counters distinguish what moved the machine from what did not") {
+  Fixture fixture;
+  REQUIRE(fixture.machine.start() == fms::Status::Ok);
+
+  REQUIRE(fixture.machine.fire(fixture.throttle) == fms::Status::Ok);
+  CHECK(fixture.machine.fire(fixture.throttle) == fms::Status::NoTransition);
+  CHECK(fixture.machine.fire(fixture.brake) == fms::Status::Ok);
+
+  CHECK(fixture.machine.transition_count() == 2);
+  CHECK(fixture.machine.rejection_count() == 1);
+}
+
+TEST_CASE("the model refuses a nameless state or trigger") {
+  fms::Model     model;
+  fms::StateId   state   = fms::kNoState;
+  fms::TriggerId trigger = fms::kNoTrigger;
+
+  CHECK(model.declare_state(fms::StringView{}, state) == fms::Status::InvalidArgument);
+  CHECK(state == fms::kNoState);
+  CHECK(model.declare_trigger(fms::StringView{}, fms::StringView{}, trigger) ==
+        fms::Status::InvalidArgument);
+  CHECK(trigger == fms::kNoTrigger);
+}
+
+TEST_CASE("an id nothing was declared under resolves to nothing, not to garbage") {
+  Fixture fixture;
+  const fms::StateId   no_such_state   = 900;
+  const fms::TriggerId no_such_trigger = 900;
+
+  CHECK(!fixture.model.has_state(no_such_state));
+  CHECK(fixture.model.state(no_such_state) == nullptr);
+  CHECK(fixture.model.trigger(no_such_trigger) == nullptr);
+  CHECK(std::strcmp(fixture.model.state_name(no_such_state), "<invalid>") == 0);
+  CHECK(std::strcmp(fixture.model.trigger_name(no_such_trigger), "<invalid>") == 0);
+  CHECK(!fixture.model.accepts(no_such_state, fixture.throttle));
+  CHECK(fixture.model.target_of(no_such_state, fixture.throttle) == fms::kNoState);
+}
+
+TEST_CASE("a lookup key too long to be a name cannot match one") {
+  Fixture           fixture;
+  const std::string long_name(fms::limits::kMaxNameLength + 1, 'x');
+  const std::string long_channel(fms::limits::kMaxChannelLength + 1, 'c');
+  const auto        view = [](const std::string& s) {
+    return fms::StringView(s.data(), s.size());
+  };
+
+  CHECK(fixture.model.find_state(view(long_name)) == fms::kNoState);
+  CHECK(fixture.model.find_trigger(view(long_name)) == fms::kNoTrigger);
+  CHECK(fixture.model.find_trigger_for_channel(view(long_channel)) == fms::kNoTrigger);
+  CHECK(fixture.model.set_name(view(long_name)) == fms::Status::NameTooLong);
 }

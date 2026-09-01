@@ -405,7 +405,7 @@ bash tools/coverage.sh            # build, test, HTML report, per-file summary
 
 Reporting goes to [codecov.io](https://codecov.io/gh/subtilitas/fms-yaml);
 nothing is written back into the tree. The floor stays here — the coverage job
-runs `tools/coverage_report.py --fail-under 80` — because a threshold
+runs `tools/coverage_report.py --fail-under 90` — because a threshold
 configured in a service is one a reader cannot find and a fork does not
 inherit.
 

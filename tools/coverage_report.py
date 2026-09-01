@@ -15,7 +15,7 @@ per-file listing adds up to.
 
 Usage:
     gcovr --json-summary-pretty -o coverage.json
-    python3 tools/coverage_report.py coverage.json [--fail-under 80]
+    python3 tools/coverage_report.py coverage.json [--fail-under 90]
 
 Exit status is 0 unless --fail-under is given and line coverage is below it.
 """

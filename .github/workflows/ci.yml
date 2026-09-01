@@ -164,7 +164,7 @@ jobs:
       - name: Enforce the coverage floor
         run: |
           python3 tools/coverage_report.py build-coverage/coverage.json \
-            --fail-under 80
+            --fail-under 90
 
       # Cobertura rather than the raw gcov data: it is what gcovr already
       # writes for the report above, so nothing is measured twice.  No token -

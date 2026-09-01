@@ -5,6 +5,7 @@
 #include <doctest/doctest.h>
 
 #include <cstring>
+#include <string>
 
 #include "fms/state_machine.hpp"
 #include "fms/yaml_loader.hpp"
@@ -186,4 +187,119 @@ TEST_CASE("the shipped car configuration loads as a pair") {
   CHECK(model.target_of(model.find_state(sv("accelerating")), brake) ==
         model.find_state(sv("braking")));
   CHECK(model.target_of(model.find_state(sv("power_off")), brake) == fms::kNoState);
+}
+
+TEST_CASE("a null argument is refused rather than dereferenced") {
+  fms::Setup               setup;
+  fms::config::Diagnostics diagnostics;
+
+  SUBCASE("no buffer") {
+    CHECK(fms::config::load_setup_string(nullptr, setup, diagnostics) ==
+          fms::Status::InvalidArgument);
+    CHECK(diagnostics.status == fms::Status::InvalidArgument);
+  }
+  SUBCASE("no path") {
+    CHECK(fms::config::load_setup_file(nullptr, setup, diagnostics) ==
+          fms::Status::InvalidArgument);
+    CHECK(diagnostics.status == fms::Status::InvalidArgument);
+  }
+}
+
+TEST_CASE("an io value longer than its field is refused, never truncated") {
+  // Silently shortening an endpoint or a client id would connect the machine
+  // somewhere other than the file says, which is worse than refusing to start.
+  const std::string long_channel(fms::limits::kMaxChannelLength + 1, 'c');
+  const std::string long_name(fms::limits::kMaxNameLength + 1, 'n');
+
+  const auto with_io = [](const char* key, const std::string& value) {
+    return std::string("fsm:\n  initial: standing\nio:\n  ") + key + ": \"" + value + "\"\n";
+  };
+
+  fms::Setup               setup;
+  fms::config::Diagnostics diagnostics;
+
+  SUBCASE("state_channel") {
+    const std::string yaml = with_io("state_channel", long_channel);
+    CHECK(fms::config::load_setup_string(yaml.c_str(), setup, diagnostics) ==
+          fms::Status::ChannelTooLong);
+  }
+  SUBCASE("error_channel") {
+    const std::string yaml = with_io("error_channel", long_channel);
+    CHECK(fms::config::load_setup_string(yaml.c_str(), setup, diagnostics) ==
+          fms::Status::ChannelTooLong);
+  }
+  SUBCASE("endpoint") {
+    const std::string yaml = with_io("endpoint", long_channel);
+    CHECK(fms::config::load_setup_string(yaml.c_str(), setup, diagnostics) ==
+          fms::Status::ChannelTooLong);
+  }
+  SUBCASE("identity") {
+    const std::string yaml = with_io("identity", long_name);
+    CHECK(fms::config::load_setup_string(yaml.c_str(), setup, diagnostics) ==
+          fms::Status::NameTooLong);
+  }
+
+  CHECK(diagnostics.line > 0);
+  CHECK(setup.io().state_channel.empty());
+}
+
+TEST_CASE("io must be a mapping, and says so with a line number") {
+  fms::Setup               setup;
+  fms::config::Diagnostics diagnostics;
+
+  CHECK(fms::config::load_setup_string("fsm:\n  initial: standing\nio:\n  - one\n  - two\n",
+                                       setup, diagnostics) == fms::Status::SchemaError);
+  CHECK(diagnostics.line > 0);
+}
+
+TEST_CASE("io is optional, and its absence is not an error") {
+  fms::Setup               setup;
+  fms::config::Diagnostics diagnostics;
+
+  REQUIRE(fms::config::load_setup_string("fsm:\n  initial: standing\n", setup, diagnostics) ==
+          fms::Status::Ok);
+  CHECK(setup.io().state_channel.empty());
+  CHECK(setup.io().endpoint.empty());
+}
+
+TEST_CASE("a setup name longer than the limit is refused") {
+  const std::string long_name(fms::limits::kMaxNameLength + 1, 'n');
+  const std::string yaml = "fsm:\n  name: \"" + long_name + "\"\n  initial: standing\n";
+
+  fms::Setup               setup;
+  fms::config::Diagnostics diagnostics;
+  CHECK(fms::config::load_setup_string(yaml.c_str(), setup, diagnostics) ==
+        fms::Status::NameTooLong);
+}
+
+TEST_CASE("a Setup insists on being told where to start") {
+  fms::Setup setup;
+
+  // Not merely absent from the file - refused outright, so a caller building a
+  // Setup in code cannot end up with an empty initial state either.
+  CHECK(setup.set_initial(fms::StringView{}) == fms::Status::InvalidArgument);
+  CHECK(setup.initial_name().empty());
+
+  fms::Model model;
+  fms::StateId id = fms::kNoState;
+  REQUIRE(model.declare_state(sv("standing"), id) == fms::Status::Ok);
+
+  // Nothing to resolve, so binding fails before it can look anything up.
+  CHECK(setup.validate_against(model) == fms::Status::SchemaError);
+  CHECK(setup.initial_in(model) == fms::kNoState);
+
+  REQUIRE(setup.set_initial(sv("standing")) == fms::Status::Ok);
+  CHECK(setup.validate_against(model) == fms::Status::Ok);
+  CHECK(setup.initial_in(model) == id);
+}
+
+TEST_CASE("clear returns a Setup to the state it was constructed in") {
+  Pair pair;
+  REQUIRE(!pair.setup.initial_name().empty());
+
+  pair.setup.clear();
+  CHECK(pair.setup.name().empty());
+  CHECK(pair.setup.initial_name().empty());
+  CHECK(pair.setup.io().state_channel.empty());
+  CHECK(pair.setup.io().endpoint.empty());
 }
