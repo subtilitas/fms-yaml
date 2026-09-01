@@ -1,0 +1,32 @@
+digraph "car" {
+  rankdir=LR;
+  node [shape=box, style=rounded, fontname="sans-serif"];
+  edge [fontname="sans-serif", fontsize=10];
+  __start [shape=point, width=0.12, label=""];
+  __start -> "power_off";
+  "power_off" -> "self_test" [label="ignition_on"];
+  "self_test" -> "power_off" [label="ignition_off"];
+  "self_test" -> "standing" [label="self_test_passed\n[errors == 0]"];
+  "self_test" -> "fault" [label="self_test_passed\n[otherwise]"];
+  "self_test" -> "fault" [label="self_test_failed"];
+  "standing" -> "power_off" [label="ignition_off"];
+  "standing" -> "accelerating" [label="throttle_pressed\n[pedal > 5]"];
+  "standing" -> "standing" [label="throttle_pressed\n[otherwise]"];
+  "standing" -> "fault" [label="engine_fault\n[severity >= 2]"];
+  "standing" -> "standing" [label="engine_fault\n[otherwise]"];
+  "standing" -> "standing" [label="brake_pressed"];
+  "accelerating" -> "coasting" [label="throttle_released"];
+  "accelerating" -> "fault" [label="engine_fault\n[severity >= 2]"];
+  "accelerating" -> "accelerating" [label="engine_fault\n[otherwise]"];
+  "accelerating" -> "braking" [label="brake_pressed"];
+  "coasting" -> "accelerating" [label="throttle_pressed\n[pedal > 5]"];
+  "coasting" -> "coasting" [label="throttle_pressed\n[otherwise]"];
+  "coasting" -> "fault" [label="engine_fault"];
+  "coasting" -> "braking" [label="brake_pressed"];
+  "coasting" -> "standing" [label="vehicle_stopped\n[speed == 0]"];
+  "coasting" -> "coasting" [label="vehicle_stopped\n[otherwise]"];
+  "braking" -> "fault" [label="engine_fault"];
+  "braking" -> "coasting" [label="brake_released"];
+  "braking" -> "standing" [label="vehicle_stopped\n[speed == 0]"];
+  "fault" -> "power_off" [label="ignition_off"];
+}

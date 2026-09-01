@@ -1,0 +1,11 @@
+setup   : instance 'car-ecu-01', starts in 'power_off'
+machine : 'car', 7 states, 10 triggers, 7 guard conditions
+  power_off     * 1 trigger(s) ignition_on
+  self_test       3 trigger(s) ignition_off self_test_passed(2) self_test_failed
+  standing        4 trigger(s) ignition_off throttle_pressed(2) engine_fault(2) brake_pressed
+  accelerating    3 trigger(s) throttle_released engine_fault(2) brake_pressed
+  coasting        4 trigger(s) throttle_pressed(2) engine_fault brake_pressed vehicle_stopped(2)
+  braking         3 trigger(s) engine_fault brake_released vehicle_stopped
+  fault           1 trigger(s) ignition_off
+lint    : clean
+ok
