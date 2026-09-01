@@ -179,3 +179,43 @@ TEST_CASE("oversized names are rejected rather than silently truncated") {
                       long_name);
   CHECK(fixture.load(yaml) == fms::Status::NameTooLong);
 }
+
+TEST_CASE("a null argument is refused rather than dereferenced") {
+  fms::Model               model;
+  fms::config::Diagnostics diagnostics;
+
+  SUBCASE("no buffer") {
+    CHECK(fms::config::load_machine_string(nullptr, model, diagnostics) ==
+          fms::Status::InvalidArgument);
+    CHECK(diagnostics.status == fms::Status::InvalidArgument);
+  }
+  SUBCASE("no path") {
+    CHECK(fms::config::load_machine_file(nullptr, model, diagnostics) ==
+          fms::Status::InvalidArgument);
+    CHECK(diagnostics.status == fms::Status::InvalidArgument);
+  }
+}
+
+TEST_CASE("a machine file that is not there is a status, not a crash") {
+  fms::Model               model;
+  fms::config::Diagnostics diagnostics;
+
+  CHECK(fms::config::load_machine_file("/definitely/not/here.machine.yaml", model,
+                                       diagnostics) == fms::Status::FileNotFound);
+  CHECK(diagnostics.status == fms::Status::FileNotFound);
+  // The model is left empty rather than half-filled from a previous load.
+  CHECK(model.state_count() == 0);
+}
+
+TEST_CASE("a failed load leaves nothing of the model behind") {
+  Loaded fixture;
+  REQUIRE(fixture.load(kMinimal) == fms::Status::Ok);
+  REQUIRE(fixture.model.state_count() == 2);
+
+  // Same object, now given something that cannot load: the previous machine
+  // must not survive into it, or a caller that ignored the Status would run a
+  // machine it did not configure.
+  CHECK(fixture.load("fsm: {name: broken}\ntriggers: []\n") != fms::Status::Ok);
+  CHECK(fixture.model.state_count() == 0);
+  CHECK(fixture.model.trigger_count() == 0);
+}

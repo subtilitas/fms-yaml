@@ -295,6 +295,7 @@ if(FMS_BUILD_TESTS)
     tests/test_main.cpp
     tests/test_args.cpp
     tests/test_condition.cpp
+    tests/test_status.cpp
     tests/test_state_machine.cpp
     tests/test_setup.cpp
     tests/test_loader.cpp
@@ -303,6 +304,12 @@ if(FMS_BUILD_TESTS)
     tests/test_no_alloc.cpp)
   target_link_libraries(fms_tests PRIVATE
     fms_core fms_config fms_alloc_guard doctest::doctest)
+  # The console port is an optional target, so its suite is optional too: it
+  # drives ConsolePort in process by swapping the standard stream buffers.
+  if(FMS_BUILD_CONSOLE)
+    target_sources(fms_tests PRIVATE tests/test_console_port.cpp)
+    target_link_libraries(fms_tests PRIVATE fms_console)
+  endif()
   if(FMS_BUILD_INSPECT)
     target_sources(fms_tests PRIVATE tests/test_lint.cpp tests/test_diagram.cpp)
     target_link_libraries(fms_tests PRIVATE fms_inspect)
