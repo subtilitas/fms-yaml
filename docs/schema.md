@@ -1,30 +1,26 @@
 # YAML schema
 
-The configuration comes in **two files**, loaded independently:
+Two files, loaded independently:
 
 | File | Sections | Loaded into | Answers |
 |---|---|---|---|
 | setup | `fsm`, `io` | `fms::Setup` | where this instance runs, how it talks, where it starts |
 | machine | `triggers`, `states` | `fms::Model` | what it does |
 
-Neither file knows about the other, and each loader rejects the other's
-sections with a diagnostic naming the file it belongs in. The one cross-file
-reference — the initial state named by the setup — is checked when the two are
-bound in `StateMachine::init`.
+Neither references the other; each loader rejects the other's sections with a
+diagnostic naming the file they belong in. The one cross-file reference — the
+initial state named by the setup — is checked in `StateMachine::init`.
 
-Both files are read **when the program runs**. Nothing in the build system opens,
-copies, validates or depends on them, which means a config can be edited, shipped
-or replaced without rebuilding, and a machine file the build never opened cannot
-be a machine file the build got wrong. The cost of that choice is that a mistake
-surfaces at start-up rather than at compile time — so every diagnostic carries a
-line number, and the example has a `--check` mode that loads a pair of files,
-reports what they describe and exits.
+Both are read when the program runs. Nothing in the build system opens, copies,
+validates or depends on them, so a mistake surfaces at start-up: every
+diagnostic carries a line number, and `--check` loads a pair, reports what they
+describe and exits.
 
-Everything below is what the loader enforces. A file can satisfy all of it and
-still describe a machine nobody meant - an unreachable state, an alternative
-behind a fallback, a guard that cannot hold. Those are not schema errors, so
-they are reported separately, by the linter `--check` and `--lint` run over the
-loaded machine; see [what a valid file can still get wrong](../README.md#what-a-valid-file-can-still-get-wrong).
+This page is what the **loader** enforces. A file can satisfy all of it and
+still describe a machine nobody meant — an unreachable state, an alternative
+behind a fallback, a guard that cannot hold. The linter reports those, over the
+loaded machine rather than the text; see
+[what a valid file can still get wrong](../README.md#what-a-valid-file-can-still-get-wrong).
 
 ---
 
@@ -35,7 +31,7 @@ loaded machine; see [what a valid file can still get wrong](../README.md#what-a-
 | Key | Type | Default | Meaning |
 |---|---|---|---|
 | `name` | string | `""` | name of *this instance*, e.g. `car-ecu-01`; diagnostics only |
-| `initial` | string | — | **required**, the state to start in. It is only a string here: the setup is loaded on its own and cannot know which states exist |
+| `initial` | string | — | **required**, the state to start in. Only a string here: the setup is loaded alone and cannot know which states exist |
 
 ## `io` (optional)
 
@@ -46,10 +42,9 @@ loaded machine; see [what a valid file can still get wrong](../README.md#what-a-
 | `endpoint` | string | `""` | opaque: broker URI, device path, socket address |
 | `identity` | string | `""` | opaque: client id, node name |
 
-All four are handed to the port verbatim through `IPort::configure()`, before
-the port is opened. The core never interprets them, and a port may ignore any of
-them — `ConsolePort` writes states to `std::cout` and errors to `std::cerr`
-whatever the channels say.
+All four reach the port verbatim through `IPort::configure()`, before it is
+opened. The core never interprets them and a port may ignore any of them —
+`ConsolePort` writes to `std::cout` and `std::cerr` whatever the channels say.
 
 ```yaml
 fsm:
@@ -82,10 +77,10 @@ io:
 | `name` | string | **required**, unique; how `transitions` refers to it |
 | `channel` | string | where the port delivers it from. **Defaults to `name`** |
 
-A channel is an opaque address: a word typed on stdin, an MQTT topic, a CAN
-identifier. One channel per trigger and one trigger per channel — routing is a
-single lookup and input can never be ambiguous. Declaring two triggers on the
-same channel is `Status::DuplicateName`.
+A channel is an opaque address: a word on stdin, an MQTT topic, a CAN
+identifier. One channel per trigger and one trigger per channel, so routing is a
+single lookup and input is never ambiguous. Two triggers on one channel is
+`Status::DuplicateName`.
 
 ```yaml
 triggers:
@@ -103,11 +98,11 @@ first word:
 > throttle_pressed pedal=42 mode=sport
 ```
 
-They are not declared anywhere: the port hands the text over, the core parses it
-into views over the port's buffer, and guards compare against it. Values stay
-text until something asks for a number. Up to `FMS_MAX_ARGUMENTS` pairs; a
-malformed list (a token without `=`, a repeated key) is reported on the error
-channel and changes nothing.
+They are declared nowhere: the port hands the text over, the core parses it into
+views over the port's buffer, and guards compare against it. Values stay text
+until something asks for a number. Up to `FMS_MAX_ARGUMENTS` pairs; a malformed
+list (a token without `=`, a repeated key) is reported on the error channel and
+changes nothing.
 
 ## `states` (required, non-empty sequence)
 
@@ -116,7 +111,7 @@ channel and changes nothing.
 | `name` | string | **required**, unique |
 | `transitions` | mapping `trigger: outcome` | optional; a state with none accepts nothing |
 
-An outcome has three spellings, so the simple case stays one line:
+An outcome has three spellings:
 
 ```yaml
 states:
@@ -131,23 +126,23 @@ states:
         - {target: fault}                                #    unguarded: the fallback
 ```
 
-Alternatives are tried in the order written and the first whose guard holds wins.
+Alternatives are tried in the order written; the first whose guard holds wins.
 An entry without a `when` always holds, so it is the fallback and anything after
 it is unreachable.
 
-Because `transitions` is a mapping, a state cannot list the same trigger twice —
-YAML keys are unique, so the alternatives for a trigger are always in one place.
+`transitions` is a mapping, so a state cannot list the same trigger twice and
+all alternatives for a trigger are in one place.
 
 Self-transitions are allowed (`brake_pressed: standing` inside `standing`) and
-are the way to say "accepted, but nothing changes". An accepted trigger always
+are how you say "accepted, but nothing changes". An accepted trigger always
 republishes the state, even when it did not change.
 
 ### Guards
 
-A guard is one comparison against one argument:
+One comparison against one argument:
 
 ```yaml
-when: "pedal > 30"                        # a single condition
+when: "pedal > 30"                            # a single condition
 when: ["severity >= 2", "system == engine"]   # a list is ANDed
 ```
 
@@ -155,15 +150,13 @@ when: ["severity >= 2", "system == engine"]   # a list is ANDed
 |---|---|
 | Operators | `==` (or `=`), `!=`, `<`, `<=`, `>`, `>=` |
 | Types | integers and text. `<` `<=` `>` `>=` need an integer literal; text takes only `==` and `!=` |
-| AND | list several conditions under one `when` |
-| OR | write several alternatives |
+| AND | several conditions under one `when` |
+| OR | several alternatives |
 | Missing argument | the condition is false — a guard decides, it never errors |
 | Unparsable value | same: `pedal=fast` against `pedal > 30` is false |
 
-Guards are parsed at load time, so `when: "pedal"` or `when: "mode > sport"` is a
-config error with a line number, not a run-time surprise. There is no
-arithmetic, no nesting and no negation beyond `!=`: a guard should be readable at
-a glance.
+Parsed at load time, so `when: "pedal"` or `when: "mode > sport"` is a config
+error with a line number. No arithmetic, no nesting, no negation beyond `!=`.
 
 ### What rejection looks like
 
@@ -174,17 +167,15 @@ a glance.
 | the arguments were malformed | — | `bad arguments for <trigger>: <reason>` |
 | nothing listens on that channel | — | `unknown channel: <channel>` |
 
-In every case the state is unchanged. Including the arguments in the guard
-message is deliberate: when a trigger you expected to work does not, what you
-want to see is what the machine was actually given.
+The state is unchanged in every case. The guard message includes the arguments,
+because that is what you need when a trigger you expected to work does not.
 
 ---
 
 ## Why the split
 
-The machine file is behaviour, reviewable on its own with no endpoints in it.
-The setup file is deployment. So the same machine definition can be run several
-ways without touching it:
+The machine file is behaviour, reviewable with no endpoints in it; the setup
+file is deployment. One definition, several deployments:
 
 ```sh
 ./car_console car.setup.yaml   car.machine.yaml   # starts in power_off
@@ -196,9 +187,9 @@ the state it cares about.
 
 ## Limits
 
-Every string and container is fixed capacity. Exceeding one is a load-time error
-(`NameTooLong`, `ChannelTooLong`, `CapacityExceeded`) — values are never
-silently truncated. Defaults from `include/fms/limits.hpp`:
+Every string and container is fixed capacity. Exceeding one is a load-time
+error — `NameTooLong`, `ChannelTooLong`, `CapacityExceeded` — never a silent
+truncation. Defaults from `include/fms/limits.hpp`:
 
 | Macro | Default | |
 |---|---|---|
@@ -212,8 +203,6 @@ silently truncated. Defaults from `include/fms/limits.hpp`:
 | `FMS_MAX_NAME_LENGTH` | 31 | |
 | `FMS_MAX_CHANNEL_LENGTH` | 95 | |
 | `FMS_MAX_MESSAGE_LENGTH` | 127 | |
-
-Override them from the build system:
 
 ```cmake
 target_compile_definitions(fms_core PUBLIC FMS_MAX_STATES=8 FMS_MAX_TRIGGERS=12)

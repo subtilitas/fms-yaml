@@ -10,24 +10,22 @@
 A finite state machine described entirely by a YAML file, built on the
 [Embedded Template Library](https://github.com/ETLCPP/etl).
 
-The whole behaviour, in one line:
-
 > **A trigger the current state lists, whose guard holds, changes the state.
 > Anything else is an error, reported back to whoever is listening.**
 
-Triggers may carry `key=value` arguments, and guards are declarative comparisons
-against them — so the configuration stays the only description of the machine.
-No actions, no timers, no nesting, and no application code in the decision.
+Triggers carry `key=value` arguments; guards are declarative comparisons
+against them. No actions, no timers, no nesting, no application code in the
+decision.
 
 | Constraint | How it is met |
 |---|---|
-| States, triggers and guards come from a config file | two files: a **machine** file (triggers, states, guards) and a **setup** file (everything else); there is nothing to register in code |
+| States, triggers and guards come from a config file | two files: a **machine** file (triggers, states, guards) and a **setup** file (everything else); nothing to register in code |
 | Built on ETL | `etl::flat_map`, `etl::vector`, `etl::string` throughout |
-| States and triggers stored with their dependencies in a flat map | `flat_map<StateId, StateNode>`, and inside each node `flat_map<TriggerId, StateId>` |
-| No dynamic allocation after setup | fixed capacities from `fms/limits.hpp`; proven by `tests/test_no_alloc.cpp`, which replaces global `operator new` and traps it |
-| No exceptions | everything is compiled `-fno-exceptions`; the one TU that talks to yaml-cpp is the exception firewall and returns `Status` |
-| Interface left open | the core has no transport dependency at all — `fms::IPort` is eight virtual methods, and the shipped implementations are a console port and an in-memory test port |
-| Config is a run-time input | the build never opens the YAML: no copying, no parsing, no dependency. `--check` validates a config by running the binary |
+| States and triggers stored with their dependencies in a flat map | `flat_map<StateId, StateNode>`, and inside each node `flat_map<TriggerId, Alternatives>` |
+| No dynamic allocation after setup | fixed capacities from `fms/limits.hpp`; `tests/test_no_alloc.cpp` replaces global `operator new` and traps it |
+| No exceptions | compiled `-fno-exceptions`; the one TU that talks to yaml-cpp is the firewall and returns `Status` |
+| Interface left open | `fms::IPort` is eight virtual methods; the shipped implementations are a console port and an in-memory test port |
+| Config is a run-time input | the build never opens the YAML; `--check` validates a config by running the binary |
 
 ## Build
 
@@ -37,22 +35,26 @@ cmake --build build -j
 ctest --test-dir build --output-on-failure
 ```
 
-Dependencies: ETL 20.39.4 and yaml-cpp 0.8.0, plus doctest 2.4.11 for the tests.
-They are fetched automatically; `-DFMS_FETCH_DEPS=OFF` uses installed copies.
+Dependencies: ETL 20.39.4, yaml-cpp 0.8.0, and doctest 2.4.11 for the tests.
+Fetched automatically; `-DFMS_FETCH_DEPS=OFF` uses installed copies.
+
+Targets: `fms_core` (the machine, no transport), `fms_config` (the YAML
+loader), `fms_console` (the `<iostream>` port, optional), `fms_inspect` (linter
+and diagram exporter, optional), `fms_alloc_guard` (optional). Nothing in
+`fms_inspect` is reachable from the run phase, so a firmware build links
+`fms_core` and stops there.
 
 ## Run the car example
 
-The YAML is read when the program runs, and nowhere else — the build does not
-copy it, parse it or depend on it. So the paths are yours; they default to
-`car.setup.yaml` and `car.machine.yaml` in the working directory:
+Both paths default to the working directory:
 
 ```sh
 ./build/car_console examples/car/car.setup.yaml examples/car/car.machine.yaml
-cd examples/car && ../../build/car_console          # or just run it from there
+cd examples/car && ../../build/car_console
 ```
 
-`car_console` reads trigger names from `std::cin` and writes state changes to
-`std::cout`:
+`car_console` reads trigger names from `std::cin`, writes states to
+`std::cout`, and errors plus the transition trace to `std::cerr`:
 
 ```
 $ ./build/car_console examples/car/car.setup.yaml examples/car/car.machine.yaml
@@ -69,8 +71,6 @@ state: power_off
 > ignition_on
 > self_test_passed errors=0
 state: standing
-> throttle_pressed pedal=3           ← not enough pedal to pull away
-state: standing
 > throttle_pressed pedal=60
 state: accelerating
 > brake_pressed
@@ -82,7 +82,7 @@ error: unknown channel: handbrake
 > quit
 ```
 
-It pipes just as well, which is how the `car_console_pipe` test drives it:
+It pipes, which is how the `car_console_pipe` test drives it:
 
 ```sh
 printf 'ignition_on\nself_test_passed errors=0\nthrottle_pressed pedal=60\n' \
@@ -93,18 +93,16 @@ state: standing
 state: accelerating
 ```
 
-State goes to stdout, errors and the transition trace to stderr, so the two are
-easy to separate.
-
-The setup file is the only thing that changes between deployments, so the same
-machine can be started somewhere else entirely by swapping it:
+Swapping the setup file redeploys the same machine elsewhere:
 
 ```sh
 ./build/car_console bench.setup.yaml car.machine.yaml   # same machine, starts in standing
 ```
 
-`--check` loads both files, says what they describe and exits — how you validate
-a configuration without building anything:
+## Validating a config
+
+`--check` loads both files, reports what they describe, lints the result and
+exits. Exit status is 1 if the linter found an error.
 
 ```sh
 $ ./build/car_console examples/car/car.setup.yaml examples/car/car.machine.yaml --check
@@ -128,16 +126,10 @@ broken.machine.yaml: unknown state at line 50: target state 'nowhere' does not e
 
 ## What a valid file can still get wrong
 
-The loader answers one question — *is this a valid description?* — and refuses
-anything it cannot turn into a machine. A file can pass all of that and still
-say something nobody meant: a state nothing leads to, an alternative written
-after the fallback that swallows it, a guard whose conditions cannot both hold.
-None of those are file errors, so the loader is right not to reject them. They
-are still worth being told about.
-
-So there is a second pass over the loaded machine. `--lint` runs it alone,
-`--check` runs it after the description, and both exit 1 if anything it found
-was an error:
+The loader answers one question: is this a valid description? A file can pass
+all of it and still describe a machine nobody meant. Those are not file errors,
+so a second pass runs over the loaded machine — `--lint` alone, or `--check`
+after the description.
 
 ```
 $ ./build/car_console broken.setup.yaml broken.machine.yaml --lint
@@ -156,44 +148,30 @@ lint    : 6 finding(s)
 | `unreachable-alternative` | error | it comes after an unguarded one, which always holds |
 | `impossible-guard` | error | the ANDed conditions contradict each other |
 | `shadowed-alternative` | error | an earlier alternative holds every time this one would |
-| `dead-end-state` | warning | nothing leads out of it — often a terminal state, so only a warning |
+| `dead-end-state` | warning | nothing leads out of it — often a terminal state |
 | `unused-trigger` | warning | declared, but no state lists it: input on its channel is always refused |
 
-Severity is a property of the check, not of the machine: the two warnings can be
-exactly what was meant, and the four errors describe behaviour no input can
-reach. Reachability ignores guards on purpose — whether `errors == 0` ever holds
-is a question about the sender, not about the file, and conflating the two would
-report one mistake twice.
-
-The guard checker reports only what it can prove. It folds every condition on
-one argument into a range plus the values excluded from it, so `pedal > 60` with
-`pedal < 5` is caught, and so is `gear >= 1, gear <= 1, gear != 1`. A guard it
-calls possible may still never hold in practice; that is the sender's business.
-
-## Drawing the machine
-
-`--export` renders the loaded machine, so the picture cannot disagree with the
-file it came from:
-
-```sh
-./build/car_console car.setup.yaml car.machine.yaml --export mermaid   # for Markdown
-./build/car_console car.setup.yaml car.machine.yaml --export dot | dot -Tsvg > car.svg
-```
-
-One edge per alternative, labelled with its trigger and its guard. An unguarded
-alternative among several is labelled `[otherwise]`, because file order is what
-makes it the fallback and order is the one thing a diagram cannot show.
-
-The diagram below is the output of that command, spliced into this file by
-`tools/diagram_sync.py --write`. The `car_diagram_check` test regenerates it and
-fails if the two have drifted — so a machine change that was not redrawn is a
-red build, not a picture that quietly lies.
+Severity belongs to the check, not to the machine: the warnings can be exactly
+what was meant. Reachability ignores guards — whether `errors == 0` ever holds
+is a question about the sender, not the file. The guard checker reports only
+what it can prove; details in
+[docs/architecture.md](docs/architecture.md#the-linter).
 
 ## The car machine
 
-The picture below is not drawn: `--export mermaid` renders it from the loaded
-machine, and the `car_diagram_check` test fails if what is committed here has
-drifted from what the YAML says.
+`--export mermaid|dot` renders the loaded machine, one edge per alternative
+labelled with its trigger and guard. An unguarded alternative among several is
+labelled `[otherwise]`, because file order is what makes it the fallback and
+order is the one thing a diagram cannot show.
+
+```sh
+./build/car_console car.setup.yaml car.machine.yaml --export mermaid
+./build/car_console car.setup.yaml car.machine.yaml --export dot | dot -Tsvg > car.svg
+```
+
+The block below is that output, spliced in by `tools/diagram_sync.py --write`.
+The `car_diagram_check` test regenerates it and fails on drift, so a machine
+change that was not redrawn is a red build rather than a picture that lies.
 
 <!-- diagram:begin -->
 ```mermaid
@@ -230,25 +208,13 @@ stateDiagram-v2
 `car_diagram_check` test.  Change the YAML, then run `python3 tools/diagram_sync.py --write`.</sub>
 <!-- diagram:end -->
 
-Which subsystem raises what:
-
-| Subsystem | Triggers |
-|---|---|
-| ignition switch | `ignition_on`, `ignition_off` |
-| self test unit | `self_test_passed`, `self_test_failed` |
-| engine | `throttle_pressed`, `throttle_released`, `engine_fault` |
-| brake system | `brake_pressed`, `brake_released` |
-| wheel speed sensors | `vehicle_stopped` |
-
-Anything not drawn above is rejected. The brakes may report a release while the
-car is standing; the machine says no and reports why, rather than inventing a
-state for it.
+Anything not drawn is rejected and reported, rather than inventing a state for
+it.
 
 ## Configuration
 
-Two files. The **machine** is behaviour — triggers and states, nothing about
-where it runs. The **setup** is everything else: which instance this is, where
-it starts, how it talks. Full schema in [docs/schema.md](docs/schema.md).
+The **machine** file is behaviour; the **setup** file is deployment. Full
+schema in [docs/schema.md](docs/schema.md).
 
 `car.machine.yaml`:
 
@@ -294,19 +260,18 @@ io:
   identity: "car-ecu-01"
 ```
 
-A **channel** is an opaque address the port understands: a word typed on stdin,
-an MQTT topic, a CAN identifier, a UDP port. The core never interprets it — it
-only matches it. Omit it and the trigger listens on its own name.
+A **channel** is an opaque address the port understands: a word on stdin, an
+MQTT topic, a CAN identifier, a UDP port. The core matches it and never
+interprets it. Omit it and the trigger listens on its own name.
 
-A **guard** is one comparison against one argument: `==` `!=` `<` `<=` `>` `>=`,
-over integers or text. List several conditions under one `when` to AND them,
-write several alternatives to OR them. Guards are parsed at load time, so
-`when: "pedal"` is a config error with a line number rather than a run-time
-surprise, and a missing argument simply makes the guard false — a guard decides,
-it never fails.
+A **guard** is one comparison against one argument — `==` `!=` `<` `<=` `>`
+`>=`, over integers or text. Several conditions under one `when` are ANDed;
+several alternatives are ORed. Guards are parsed at load time, so `when:
+"pedal"` is a config error with a line number, and a missing argument makes the
+guard false — a guard decides, it never fails.
 
-Each loader rejects the other's sections, so a stray `states:` in the setup file
-is caught with a message saying where it belongs.
+Each loader rejects the other's sections, naming the file the section belongs
+in.
 
 ## Using it
 
@@ -337,7 +302,7 @@ for (;;) {                        // no allocation past this point
 runtime.stop();
 ```
 
-Or drive the machine directly, with no port at all:
+Or drive the machine directly, with no port:
 
 ```cpp
 fms::Args args;
@@ -354,35 +319,26 @@ switch (machine.fire(model.find_trigger("throttle_pressed"), args, event)) {
 
 ## Plugging in another interface
 
-`fms::IPort` is the only thing between the machine and the world. Implement it
-and the machine works over anything — MQTT, CAN, a socket, a serial line:
+`fms::IPort` is the only thing between the machine and the world — eight
+methods, five with usable defaults. Implement it and the machine works over
+MQTT, CAN, a socket or a serial line:
 
 ```cpp
 class MyPort final : public fms::IPort {
- public:
-  // The io block of the setup file arrives here, before anything is opened.
-  fms::Status configure(const fms::IoConfig& io) noexcept override { ... }
-
-  fms::Status open() noexcept override { /* connect */ return fms::Status::Ok; }
-  fms::Status close() noexcept override { /* disconnect */ return fms::Status::Ok; }
-
-  // Called once per trigger during start(): subscribe, open a filter, ignore it.
-  fms::Status listen(fms::StringView channel) noexcept override { ... }
-
-  // Block up to timeout_ms and fill in `input`: the channel it arrived on, and
-  // the `key=value` text it carried, if any.  Both are views into storage you
-  // own, and must stay valid until the next call on the port.  Timeout when
-  // nothing arrived, EndOfInput at EOF.
-  fms::Status receive(fms::Input& input, std::uint32_t timeout_ms) noexcept override { ... }
-
-  fms::Status publish_state(fms::StringView state) noexcept override { ... }
-  fms::Status publish_error(fms::StringView message) noexcept override { ... }
+  fms::Status configure(const fms::IoConfig& io) noexcept override;  // optional
+  fms::Status open() noexcept override;                              // optional
+  fms::Status listen(fms::StringView channel) noexcept override;     // optional
+  fms::Status receive(fms::Input& in, std::uint32_t ms) noexcept override;
+  fms::Status publish_state(fms::StringView state) noexcept override;
+  fms::Status publish_error(fms::StringView message) noexcept override;
+  fms::Status close() noexcept override;                             // optional
 };
 ```
 
-No method may throw or allocate. `io.endpoint` and `io.identity` from the setup
-file are handed to you untouched, for whatever a broker URI or node name means
-to your transport. See [docs/architecture.md](docs/architecture.md#writing-a-port).
+No method may throw or allocate; `receive()` is the only one that may block,
+and the views it returns must stay valid until the next call on the port.
+`io.endpoint` and `io.identity` reach you untouched. Full contract in
+[docs/architecture.md](docs/architecture.md#writing-a-port).
 
 ## Data layout
 
@@ -405,21 +361,15 @@ Model                                              the behaviour
 └── channel_index_ flat_map<Channel, TriggerId>    inbound routing
 ```
 
-Firing a trigger is one binary search in the current state's transition map, then
-the alternatives in file order until a guard holds. Conditions are interned in
-one pool and referenced by index, so an alternative is six bytes rather than two
-fixed-size strings — without that, a full Model would be hundreds of kilobytes.
+Firing a trigger is one binary search in the current state's transition map,
+then the alternatives in file order until a guard holds. Conditions are interned
+in one pool and referenced by index, so an `Alternative` is 6 bytes rather than
+two fixed-size strings; without that a full `Model` would be hundreds of
+kilobytes.
 
 ## Quality gates
 
-Every push runs the same seven things, and each one answers a different
-question. Tests say the machine does what the configuration describes;
-coverage says how much of the code the tests actually reached; the static
-analysers say what is wrong with code no test happened to exercise; the lint
-workflow reads the scripts and the workflows that run all of that; the sanitizers
-say whether the parts that did run touched memory they own and stayed inside
-what the language actually defines; and CodeQL reads the whole program at once,
-looking for what a file-at-a-time analyser cannot see.
+Every push runs the same gates, each answering a question the others cannot.
 
 | Gate | Tool | Where |
 |---|---|---|
@@ -427,55 +377,47 @@ looking for what a file-at-a-time analyser cannot see.
 | Coverage | `gcovr`, published to codecov.io | `ci.yml` → `coverage` |
 | Static analysis | `clang-tidy` (`.clang-tidy`), over `src`, `tests` and `examples` | `ci.yml` → `clang-tidy` |
 | Static analysis | `cppcheck` (`.cppcheck-suppressions`) | `ci.yml` → `cppcheck` |
-| Tooling | `ruff` (`ruff.toml`) over `tools`, `shellcheck` over the shell, `actionlint` over the workflows | `lint.yml` |
-| Runtime analysis | ASan (memory) + UBSan (undefined behaviour) over the test suite | `sanitizers.yml` |
+| Tooling | `ruff` (`ruff.toml`), `shellcheck`, `actionlint` | `lint.yml` |
+| Runtime analysis | ASan + UBSan over the test suite | `sanitizers.yml` |
 | Configuration | the shipped YAML loaded and linted by the real binary | `ctest` → `car_config_check` |
 | Documentation | the README's diagram regenerated and compared | `ctest` → `car_diagram_check` |
 | Deep static analysis | CodeQL (`security-and-quality`) over a real build | `codeql.yml` |
 
-Both analysers are invoked through `tools/analyze.sh`, so their flags exist in
-one place and a local run is the run that gates the build:
+Both analysers run through `tools/analyze.sh`, so the flags exist once and a
+local run is the run that gates the build:
 
 ```sh
 bash tools/analyze.sh              # clang-tidy, cppcheck, and the tooling lint
 bash tools/analyze.sh clang-tidy   # just one of them
 ```
 
-A tool that is not installed fails the run rather than being skipped, because a
-gate that could not run has not passed. That is the same reason the clang-tidy
-step is a script at all: it pipes into `tee`, and a workflow `run:` block gets
-`bash -e` without `pipefail`, so the step would report `tee`'s exit code —
-always zero — and the gate would never fail no matter what the analyser found.
+A tool that is not installed fails the run rather than being skipped: a gate
+that could not run has not passed. That is also why the clang-tidy step is a
+script — it pipes into `tee`, and a workflow `run:` block gets `bash -e`
+without `pipefail`, so the step would report `tee`'s exit code, always zero.
 
-Reproduce the coverage run exactly as CI does it:
+Reproduce the coverage run as CI does it:
 
 ```sh
 pip install gcovr
 bash tools/coverage.sh            # build, test, HTML report, per-file summary
 ```
 
-The numbers themselves are published to
-[codecov.io](https://codecov.io/gh/subtilitas/fms-yaml), which renders the badge
-above and keeps the history. Nothing is written back into the tree, so there is
-no generated block to conflict over.
+Reporting goes to [codecov.io](https://codecov.io/gh/subtilitas/fms-yaml);
+nothing is written back into the tree. The floor stays here — the coverage job
+runs `tools/coverage_report.py --fail-under 80` — because a threshold
+configured in a service is one a reader cannot find and a fork does not
+inherit.
 
-The *floor*, though, stays here: the coverage job runs
-`tools/coverage_report.py --fail-under 80`, so the threshold is an argument in
-a workflow rather than a setting in somebody's account. A reader can find it, a
-fork inherits it, and raising it is a diff like any other.
+The two numbers differ by construction. Both measure `src/` and `include/fms/`
+(`gcovr.cfg` decides that, and `disable_search` pins the upload to the report
+gcovr wrote), but codecov counts a partially taken branch as a partial line
+while the floor tests plain line coverage, so the badge reads lower.
 
-The badge and the floor are therefore not quite the same number, and that is
-worth knowing before the two are compared. Both measure `src/` and
-`include/fms/` — `gcovr.cfg` decides that, and the upload is pinned to the one
-report gcovr wrote so the service cannot widen it — but codecov counts a
-partially taken branch as a partial line, while the floor is checked against
-plain line coverage. Codecov's percentage is the lower of the two by
-construction.
-
-Line coverage is portable, but branch coverage is not — it counts edges the
-compiler emitted, so it is only comparable within one toolchain. The same tree
-measured 72.2% branches under GCC 13 and 68.9% under GCC 11, with line coverage
-identical at 82.1%. CI's GCC is the reference.
+Line coverage is portable; branch coverage is not. It counts the edges the
+compiler emitted, so it compares only within one toolchain: one tree measured
+72.2% branches under GCC 13 and 68.9% under GCC 11, with line coverage
+identical in both. CI's GCC is the reference.
 
 ## Layout
 
@@ -502,13 +444,6 @@ tests/                doctest suites, the no-allocation proof, and a scripted co
 tools/                the scripts the quality gates run
 docs/                 schema.md, architecture.md
 ```
-
-Targets: `fms_core` (the machine, no transport), `fms_config` (the YAML loader),
-`fms_console` (the `<iostream>` port, optional), `fms_inspect` (the linter and
-the diagram exporter, optional), `fms_alloc_guard` (optional).
-
-`fms_inspect` reads a machine and reports on it; nothing in it is reachable from
-the run phase, so a firmware build links `fms_core` and stops there.
 
 ---
 
