@@ -12,7 +12,12 @@
 #define FMS_VERSION_STRING "@PROJECT_VERSION@"
 
 /// Comparable form, for `#if FMS_VERSION >= FMS_VERSION_AT(1, 0, 0)`.
-#define FMS_VERSION_AT(major, minor, patch) ((major) * 10000 + (minor) * 100 + (patch))
+///
+/// Three digits per field, so a minor or patch of 100 is not the same number as
+/// the next major up.  The largest value it produces, 999.999.999, is 999 999
+/// 999 - inside a 32-bit int, and `#if` evaluates in intmax_t anyway.
+#define FMS_VERSION_AT(major, minor, patch) \
+  ((major) * 1000000 + (minor) * 1000 + (patch))
 #define FMS_VERSION FMS_VERSION_AT(FMS_VERSION_MAJOR, FMS_VERSION_MINOR, FMS_VERSION_PATCH)
 
 namespace fms {

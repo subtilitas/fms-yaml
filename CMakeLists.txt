@@ -440,10 +440,7 @@ FMS_CAPACITY_FLAGS=\"${fms_capacity_flags}\"
               -DEXPECTED=${CMAKE_CURRENT_SOURCE_DIR}/tests/car_session.expected
               -P ${CMAKE_CURRENT_SOURCE_DIR}/tests/run_console_test.cmake)
 
-    # Loading the shipped configuration is itself a test, run by the binary.
-    # --check also lints what it loaded, so this fails on a machine that is
-    # valid and still cannot mean what it says.
-      # The version the binary reports comes from the header CMake generated from
+    # The version the binary reports comes from the header CMake generated from
     # project(), so this is the check that a release tag, the CMake project and
     # the running program are still the same number.
     string(REPLACE "." "\\." fms_version_pattern "${PROJECT_VERSION}")
@@ -451,6 +448,9 @@ FMS_CAPACITY_FLAGS=\"${fms_capacity_flags}\"
     set_tests_properties(car_version PROPERTIES PASS_REGULAR_EXPRESSION
       "fms-yaml ${fms_version_pattern} \\(capacities [0-9_]+\\)")
 
+    # Loading the shipped configuration is itself a test, run by the binary.
+    # --check also lints what it loaded, so this fails on a machine that is
+    # valid and still cannot mean what it says.
     add_test(NAME car_config_check
       COMMAND car_console
               ${CMAKE_CURRENT_SOURCE_DIR}/examples/car/car.setup.yaml

@@ -3,7 +3,7 @@
 #
 # Install the library, then build something against the installed package.
 #
-#   tools/install_check.sh [prefix]      # default: build-install
+#   tools/install_check.sh [work-dir]    # default: build-install
 #
 # find_package(fms_yaml) is the supported way to consume this project, so it
 # needs a gate of its own: the unit tests all run inside the build tree, where
@@ -15,7 +15,9 @@
 # and installs ETL and yaml-cpp at the pinned versions, into the same prefix,
 # and is the only place the FMS_FETCH_DEPS=OFF path is exercised.
 #
-# Needs git, cmake and a compiler.  Nothing is written outside the prefix.
+# Needs git, cmake and a compiler.  Everything it produces - the dependency
+# sources, four build trees, their logs, and the install prefix itself at
+# <work-dir>/prefix - stays inside the work directory.
 set -euo pipefail
 
 root="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
