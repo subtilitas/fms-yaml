@@ -437,6 +437,39 @@ FMS_CAPACITY_FLAGS=\"${fms_capacity_flags}\"
     set_tests_properties(abi_guard PROPERTIES DEPENDS fms_tests)
   endif()
 
+  # ---------------------------------------------------------------------------
+  # "No exceptions" and "no allocation" are properties of the built archives,
+  # and until now only of the flags that are supposed to produce them.  A
+  # -fno-exceptions that stopped being applied, or a container that started
+  # calling operator new, would leave every test green.  tools/symbol_check.sh
+  # runs the nm invocations docs/architecture.md has always printed.
+  #
+  # Skipped for instrumented builds and on MSVC for the same reasons as
+  # abi_guard: the coverage and sanitizer runtimes bring symbols of their own,
+  # and the names here are the platform's.
+  # ---------------------------------------------------------------------------
+  if(NOT MSVC AND NOT FMS_ENABLE_COVERAGE AND NOT FMS_ENABLE_SANITIZERS
+     AND CMAKE_CXX_COMPILER_ID MATCHES "GNU|Clang"
+     AND EXISTS ${CMAKE_CURRENT_SOURCE_DIR}/tools/symbol_check.sh)
+    set(fms_symbol_env "NM=\"${CMAKE_NM}\"\n")
+    string(APPEND fms_symbol_env "FMS_CORE_LIB=\"$<TARGET_FILE:fms_core>\"\n")
+    string(APPEND fms_symbol_env "FMS_CONFIG_LIB=\"$<TARGET_FILE:fms_config>\"\n")
+    string(APPEND fms_symbol_env
+      "FMS_ALLOC_GUARD_LIB=\"$<TARGET_FILE:fms_alloc_guard>\"\n")
+    if(FMS_BUILD_CONSOLE)
+      string(APPEND fms_symbol_env "FMS_CONSOLE_LIB=\"$<TARGET_FILE:fms_console>\"\n")
+    endif()
+    if(FMS_BUILD_INSPECT)
+      string(APPEND fms_symbol_env "FMS_INSPECT_LIB=\"$<TARGET_FILE:fms_inspect>\"\n")
+    endif()
+    file(GENERATE OUTPUT ${CMAKE_BINARY_DIR}/symbol_check.env
+         CONTENT "${fms_symbol_env}")
+
+    add_test(NAME symbol_check
+      COMMAND bash ${CMAKE_CURRENT_SOURCE_DIR}/tools/symbol_check.sh
+              ${CMAKE_BINARY_DIR})
+  endif()
+
   # The console example is exercised through a pipe, which also proves the
   # port works with redirected stdin.  The YAML paths are passed to the test
   # command, so the files are opened when the test runs - not while configuring.
