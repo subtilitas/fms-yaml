@@ -185,6 +185,21 @@ file is deployment. One definition, several deployments:
 That second file is how you resume after a reset, or drop a test straight into
 the state it cares about.
 
+## What the loader refuses before parsing
+
+The path is checked before yaml-cpp is given it, and opening is not the whole
+check: a directory opens for reading on POSIX and fails on the first read, as
+does a device such as `/proc/self/mem`.
+
+| Path | Status |
+|---|---|
+| does not exist, or cannot be opened | `FileNotFound` |
+| opens, and the first read fails | `FileNotReadable`, with the reason from `errno` |
+| opens and is empty | read normally; an empty document is a schema error, not a file error |
+
+`Diagnostics::message` names the path and what the operating system said, for
+example `cannot read '/mnt/config': Is a directory`.
+
 ## Limits
 
 Every string and container is fixed capacity. Exceeding one is a load-time

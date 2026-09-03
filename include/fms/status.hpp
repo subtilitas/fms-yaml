@@ -13,6 +13,8 @@ enum class Status : std::uint8_t {
 
   // --- configuration -------------------------------------------------------
   FileNotFound,
+  FileNotReadable,  ///< it opens and the first read fails: a directory, a
+                    ///< device that refuses to be read, a revoked mount
   ParseError,       ///< the YAML text itself is malformed
   SchemaError,      ///< valid YAML, but not a valid machine description
   DuplicateName,
