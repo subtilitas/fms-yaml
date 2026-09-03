@@ -7,8 +7,10 @@
 #
 # What it proves is not that the code works - the suite in tests/ does that -
 # but that the package is usable: the config file resolves, the dependencies it
-# names are found, the headers are where the targets say they are, and the
-# capacities the library was built with arrive with them.
+# names are found, and the headers are where the targets say they are.  It is
+# built twice, the second time against a prefix installed with a non-default
+# FMS_MAX_ARGUMENTS, and the capacity tag it prints is what says the exported
+# targets carried that capacity across.
 cmake_minimum_required(VERSION 3.20)
 project(fms_consumer LANGUAGES CXX)
 

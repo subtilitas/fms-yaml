@@ -12,9 +12,12 @@
 #   tools/abi_guard_check.sh [build-dir]      # default: build
 #
 # Three checks:
-#   1. every FMS_MAX_* in limits.hpp appears in the tag, so the guard has no hole
+#   1. every FMS_MAX_* in limits.hpp is named on a line that builds the tag
 #   2. a probe built with the library's capacities links, and runs
-#   3. a probe built with one capacity changed does not link, and says so by
+#   3. the tag that probe reports has one field per capacity - being named is
+#      not the same as being reached, and an FMS_ABI_ID_nn line left out of the
+#      join chain satisfies check 1 while carrying nothing into the symbol
+#   4. a probe built with one capacity changed does not link, and says so by
 #      naming the symbol it could not resolve
 #
 # The changed capacity is derived from what the probe reports, not written down
@@ -129,7 +132,20 @@ if ! build_probe "${work}/match.log" "${capacities[@]}"; then
 fi
 read -r states tag < <("${work}/probe")
 
-# --- 3. one capacity changed must not ----------------------------------------
+# --- 3. the tag carries one field per capacity -------------------------------
+# Check 1 reads the source; this reads the symbol the compiler actually built.
+# A capacity named on an FMS_ABI_ID_nn line that the join chain never reaches
+# passes check 1 and shows up here as a missing field.
+declared_count="$(echo "${declared}" | wc -l)"
+IFS='_' read -r -a fields <<< "${tag}"
+if [ "${#fields[@]}" -ne "${declared_count}" ]; then
+  echo "abi_guard: limits.hpp declares ${declared_count} capacities, but the tag" >&2
+  echo "           carries ${#fields[@]}: ${tag}" >&2
+  echo "           A capacity is named in abi.hpp without reaching FMS_ABI_ID." >&2
+  exit 1
+fi
+
+# --- 4. one capacity changed must not link -----------------------------------
 other=$((states + 1))
 # Everything the tree configured except the one being changed, so the compiler
 # is never handed two values for the same macro.
@@ -154,5 +170,5 @@ if ! grep -q "fms_abi_${other}_" "${work}/mismatch.log"; then
   exit 1
 fi
 
-echo "abi_guard: ok - tag ${tag}, $(echo "${declared}" | wc -l) capacities," \
+echo "abi_guard: ok - ${declared_count} capacities, all in tag ${tag};" \
      "matching links, FMS_MAX_STATES=${other} does not"

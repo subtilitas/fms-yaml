@@ -9,6 +9,7 @@
 #ifndef FMS_RUNTIME_HPP
 #define FMS_RUNTIME_HPP
 
+#include "fms/abi.hpp"
 #include "fms/model.hpp"
 #include "fms/port.hpp"
 #include "fms/state_machine.hpp"
@@ -20,7 +21,10 @@ using TraceFn = void (*)(void* user, const TransitionEvent&);
 
 class Runtime {
  public:
-  Runtime() noexcept = default;
+  /// As with Model and Setup: the body pins the capacity configuration, because
+  /// a Runtime holds an Args and a message buffer and is therefore sized by
+  /// FMS_MAX_ARGUMENTS and FMS_MAX_MESSAGE_LENGTH.  See fms/abi.hpp.
+  Runtime() noexcept { abi::pin(); }
 
   Runtime(const Runtime&) = delete;
   Runtime& operator=(const Runtime&) = delete;

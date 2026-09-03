@@ -180,7 +180,9 @@ built with `-fexceptions`, and its entry points are `noexcept` with
 `Diagnostics` record with a line number.
 
 Enforced in CMake, not by convention: `fms_disable_exceptions()` is applied to
-every target except `fms_config`.
+every target that ships — every one except `fms_config`. `fms_tests` is the
+other exception and does not ship: doctest needs exceptions to report a failed
+assertion.
 
 ETL is configured consistently on both sides. `ETL_THROW_EXCEPTIONS` is never
 defined, so ETL never throws; `ETL_LOG_ERRORS` is a `PUBLIC` compile definition
@@ -321,15 +323,21 @@ undefined reference to `fms_abi_8_12_8_4_3_64_4_31_95_127_32'
 The name of the missing symbol is the configuration the caller compiled with,
 and the one `fms_core` defines is the configuration it was built with.
 
-The guard fires when a `Model` or a `Setup` is constructed, which every program
-using the library does. A translation unit that only declares a reference or a
-pointer to one constructs nothing and is not covered, and neither is a mismatch
-in `FMS_MAX_FINDINGS` alone in a program that lints without loading — the
-constructor is the hook, so something has to be constructed.
+The guard fires when a `Model`, `Setup`, `Args` or `Runtime` is constructed —
+every type whose layout a capacity decides and whose storage the caller
+provides. A translation unit that constructs none of them, holding only
+references or pointers, is not covered: the constructor is the hook, so
+something has to be constructed. `lint::Report` needs no hook. It is
+`etl::vector<Finding, N>`, so `FMS_MAX_FINDINGS` is already in the mangled name
+of `analyse()`, `has_errors()` and `describe()`, and a caller that disagrees
+fails on those instead.
 
 `tools/abi_guard_check.sh` is the gate, run by the `abi_guard` test. It checks
-that every `FMS_MAX_*` in `limits.hpp` appears in the tag, that a probe built
-with the library's own capacities links and runs, and that one built with a
+that every `FMS_MAX_*` in `limits.hpp` is named on a line that builds the tag,
+that a probe built with the library's own capacities links and runs, that the
+tag that probe reports has one field per capacity — a name on an `FMS_ABI_ID_nn`
+line the join chain never reaches passes the first check and shows up as a
+missing field here — and that one built with a
 changed capacity does not link and says which symbol it could not resolve. The
 changed capacity is derived from what the probe reports, so the gate holds for a
 tuned tree as well as for the defaults. GCC and Clang only: it is a statement
