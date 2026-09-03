@@ -445,8 +445,11 @@ if(FMS_BUILD_TESTS)
     target_sources(fms_tests PRIVATE tests/test_lint.cpp tests/test_diagram.cpp)
     target_link_libraries(fms_tests PRIVATE fms_inspect)
   endif()
+  # FMS_BINARY_DIR is where a test may create something: the source tree is read
+  # by every other gate and stays as checked out.
   target_compile_definitions(fms_tests PRIVATE
-    FMS_SOURCE_DIR="${CMAKE_CURRENT_SOURCE_DIR}")
+    FMS_SOURCE_DIR="${CMAKE_CURRENT_SOURCE_DIR}"
+    FMS_BINARY_DIR="${CMAKE_BINARY_DIR}")
   # doctest reports a failed assertion by throwing, so this is the second target
   # that keeps exceptions.  Said outright rather than inherited from a default,
   # which is also what stops MSVC's D9025 above.
