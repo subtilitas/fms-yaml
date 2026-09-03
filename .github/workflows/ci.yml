@@ -69,7 +69,7 @@ jobs:
             werror: 'ON'
           - name: windows-msvc
             os: windows-2022
-            werror: 'OFF'   # /W4 /WX is unproven here; turn it on once it is green
+            werror: 'ON'
 
     steps:
       - uses: actions/checkout@v6
