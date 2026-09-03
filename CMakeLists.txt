@@ -450,7 +450,7 @@ FMS_CAPACITY_FLAGS=\"${fms_capacity_flags}\"
   # ---------------------------------------------------------------------------
   if(NOT MSVC AND NOT FMS_ENABLE_COVERAGE AND NOT FMS_ENABLE_SANITIZERS
      AND CMAKE_CXX_COMPILER_ID MATCHES "GNU|Clang"
-     AND EXISTS ${CMAKE_CURRENT_SOURCE_DIR}/tools/symbol_check.sh)
+     AND EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/tools/symbol_check.sh")
     set(fms_symbol_env "NM=\"${CMAKE_NM}\"\n")
     string(APPEND fms_symbol_env "FMS_CORE_LIB=\"$<TARGET_FILE:fms_core>\"\n")
     string(APPEND fms_symbol_env "FMS_CONFIG_LIB=\"$<TARGET_FILE:fms_config>\"\n")
@@ -462,12 +462,12 @@ FMS_CAPACITY_FLAGS=\"${fms_capacity_flags}\"
     if(FMS_BUILD_INSPECT)
       string(APPEND fms_symbol_env "FMS_INSPECT_LIB=\"$<TARGET_FILE:fms_inspect>\"\n")
     endif()
-    file(GENERATE OUTPUT ${CMAKE_BINARY_DIR}/symbol_check.env
+    file(GENERATE OUTPUT "${CMAKE_BINARY_DIR}/symbol_check.env"
          CONTENT "${fms_symbol_env}")
 
     add_test(NAME symbol_check
-      COMMAND bash ${CMAKE_CURRENT_SOURCE_DIR}/tools/symbol_check.sh
-              ${CMAKE_BINARY_DIR})
+      COMMAND bash "${CMAKE_CURRENT_SOURCE_DIR}/tools/symbol_check.sh"
+              "${CMAKE_BINARY_DIR}")
   endif()
 
   # The console example is exercised through a pipe, which also proves the

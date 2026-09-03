@@ -47,8 +47,15 @@ if ! command -v "${nm_tool}" > /dev/null 2>&1; then
   exit 1
 fi
 
+work="$(mktemp -d)"
+trap 'rm -rf "${work}"' EXIT
+
 throwing='__cxa_throw|_Unwind_Resume'
-allocating=' U (operator new|operator delete|malloc|calloc|realloc)'
+# The array forms need no entry of their own: "operator new[](unsigned long)"
+# contains "operator new".  free does, though - fms_alloc_guard references it
+# and the table above says so, and a check that let it through would not match
+# what it claims to enforce.
+allocating=' U (operator new|operator delete|malloc|calloc|realloc|free)'
 failures=0
 
 report() {   # report <archive> <what was wrong> [detail...]
@@ -60,12 +67,30 @@ report() {   # report <archive> <what was wrong> [detail...]
   failures=$((failures + 1))
 }
 
-count_throwing() {   # count_throwing <archive>
-  "${nm_tool}" -C "$1" | grep -cE "${throwing}" || true
+# nm's output, once, with its exit status checked.  Piping nm straight into
+# grep would turn "nm could not read this archive" into "grep matched nothing",
+# which is the same thing as a pass.
+symbols_of() {   # symbols_of <archive> -> path to the symbol listing, or fails
+  local archive="$1"
+  local listing
+  listing="${work}/$(basename "${archive}").sym"
+
+  if [ -s "${listing}" ]; then
+    echo "${listing}"
+    return 0
+  fi
+  if ! "${nm_tool}" -C "${archive}" > "${listing}" 2> "${listing}.err"; then
+    return 1
+  fi
+  echo "${listing}"
 }
 
-allocator_refs() {   # allocator_refs <archive>
-  "${nm_tool}" -C "$1" | grep -E "${allocating}" | sed 's/^ *U //' | sort -u || true
+count_throwing() {   # count_throwing <listing>
+  grep -cE "${throwing}" "$1" || true
+}
+
+allocator_refs() {   # allocator_refs <listing>
+  grep -E "${allocating}" "$1" | sed 's/^ *U //' | sort -u || true
 }
 
 check_archive() {   # check_archive <key> <allow-allocator: yes|no>
@@ -81,15 +106,22 @@ check_archive() {   # check_archive <key> <allow-allocator: yes|no>
     return 0
   fi
 
+  local listing
+  if ! listing="$(symbols_of "${archive}")"; then
+    report "${archive}" "${nm_tool} could not read it" \
+      "$(head -2 "${work}/$(basename "${archive}").sym.err" 2> /dev/null)"
+    return 0
+  fi
+
   local throwers
-  throwers="$(count_throwing "${archive}")"
+  throwers="$(count_throwing "${listing}")"
   if [ "${throwers}" -ne 0 ]; then
     report "${archive}" "${throwers} throw/unwind symbol(s); it is built -fno-exceptions"
   fi
 
   if [ "${allow_alloc}" = "no" ]; then
     local refs
-    refs="$(allocator_refs "${archive}")"
+    refs="$(allocator_refs "${listing}")"
     if [ -n "${refs}" ]; then
       local lines=()
       while IFS= read -r line; do lines+=("${line}"); done <<< "${refs}"
@@ -111,9 +143,16 @@ check_archive FMS_ALLOC_GUARD_LIB yes
 # The firewall, checked the other way round.  fms_config is the one translation
 # unit compiled -fexceptions, and it is only a firewall while it still has the
 # machinery to catch with.
+# Absent from the file means the loader was not built (FMS_BUILD_CONFIG=OFF) and
+# there is no firewall to check.  Named but missing, or unreadable, is a broken
+# gate rather than an absent target, and is reported as one.
 config="$(setting FMS_CONFIG_LIB)"
-if [ -n "${config}" ] && [ -f "${config}" ]; then
-  if [ "$(count_throwing "${config}")" -eq 0 ]; then
+if [ -n "${config}" ]; then
+  if [ ! -f "${config}" ]; then
+    report "${config}" "listed in ${env_file} but not on disk"
+  elif ! config_listing="$(symbols_of "${config}")"; then
+    report "${config}" "${nm_tool} could not read it"
+  elif [ "$(count_throwing "${config_listing}")" -eq 0 ]; then
     report "${config}" "no throw/unwind symbols: the yaml-cpp firewall is gone"
   else
     echo "  $(basename "${config}"): has the unwind machinery, as the firewall must"
