@@ -199,6 +199,22 @@ endif()
 fms_make_dependency_system(yaml-cpp::yaml-cpp)
 
 # ---------------------------------------------------------------------------
+# Every target below states its own exception policy, so drop the default one.
+#
+# MSVC's default flags carry /EHsc.  fms_disable_exceptions appends /EHs-c-,
+# which does the right thing and reports `command line warning D9025:
+# overriding '/EHs' with '/EHs-'` for every target, ten lines a build.  Removing
+# it here rather than overriding it per target means each target says what it
+# wants once.
+#
+# After the dependencies, deliberately: yaml-cpp is built in this tree and needs
+# exceptions, and it took the flags at the FetchContent call above.
+# ---------------------------------------------------------------------------
+if(MSVC)
+  string(REPLACE "/EHsc" "" CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS}")
+endif()
+
+# ---------------------------------------------------------------------------
 # fms_core : the state machine itself.  No exceptions, no heap after setup,
 # no transport.  fms::IPort is an interface with no implementation here.
 # ---------------------------------------------------------------------------
@@ -408,7 +424,11 @@ if(FMS_BUILD_TESTS)
   endif()
   target_compile_definitions(fms_tests PRIVATE
     FMS_SOURCE_DIR="${CMAKE_CURRENT_SOURCE_DIR}")
-    fms_warnings(fms_tests)   # tests keep exceptions: doctest needs them
+  # doctest reports a failed assertion by throwing, so this is the second target
+  # that keeps exceptions.  Said outright rather than inherited from a default,
+  # which is also what stops MSVC's D9025 above.
+  fms_enable_exceptions(fms_tests)
+  fms_warnings(fms_tests)
   fms_instrument(fms_tests)
   add_test(NAME fms_tests COMMAND fms_tests)
 

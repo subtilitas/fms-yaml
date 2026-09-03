@@ -411,10 +411,13 @@ TEST_CASE("a full report says so rather than pretending it looked at everything"
 
   // Every state is a dead end, every state but the first is unreachable, and
   // the trigger is unused: two findings per state.
-  const std::size_t findings = 2 * fms::limits::kMaxStates;
+  constexpr std::size_t kFindings = 2 * fms::limits::kMaxStates;
 
   fms::lint::Report report;
-  if (findings > fms::limits::kMaxFindings) {
+  // Both sides are capacities, so which branch this test is depends on the
+  // configuration and on nothing that happens at run time.  `if constexpr`
+  // says that; a plain `if` is MSVC's C4127, and it has a point.
+  if constexpr (kFindings > fms::limits::kMaxFindings) {
     CHECK(fms::lint::analyse(model, 0, report) == fms::Status::CapacityExceeded);
     CHECK(report.size() == fms::limits::kMaxFindings);
     CHECK(report.full());
@@ -424,8 +427,8 @@ TEST_CASE("a full report says so rather than pretending it looked at everything"
     // exactly full - kMaxStates 16 against kMaxFindings 32 - and a report that
     // is full without having dropped anything is not a capacity error.
     CHECK(fms::lint::analyse(model, 0, report) == fms::Status::Ok);
-    CHECK(report.size() == findings);
-    CHECK(report.full() == (findings == fms::limits::kMaxFindings));
+    CHECK(report.size() == kFindings);
+    CHECK(report.full() == (kFindings == fms::limits::kMaxFindings));
   }
 }
 
