@@ -69,9 +69,20 @@ cmake --build "${build}" --parallel
 for archive in "${build}/libfms_core.a" "${build}/libfms_inspect.a"; do
   [ -f "${archive}" ] || { echo "cross_check: ${archive} was not built" >&2; exit 1; }
 
-  throwers="$(arm-none-eabi-nm -C "${archive}" | grep -cE '__cxa_throw|_Unwind_Resume' || true)"
-  allocs="$(arm-none-eabi-nm -C "${archive}" \
-            | grep -E ' U (operator new|operator delete|malloc|calloc|realloc)' || true)"
+  # nm's exit status is checked rather than piped away: an archive it cannot
+  # read would otherwise report zero throwers and pass.  free is in the pattern
+  # for the same reason it is in tools/symbol_check.sh - referencing it is
+  # referencing the heap.
+  listing="${probe}/$(basename "${archive}").sym"
+  if ! arm-none-eabi-nm -C "${archive}" > "${listing}" 2>&1; then
+    echo "cross_check: arm-none-eabi-nm could not read ${archive}:" >&2
+    head -2 "${listing}" >&2
+    exit 1
+  fi
+
+  throwers="$(grep -cE '__cxa_throw|_Unwind_Resume' "${listing}" || true)"
+  allocs="$(grep -E ' U (operator new|operator delete|malloc|calloc|realloc|free)' \
+            "${listing}" || true)"
 
   if [ "${throwers}" -ne 0 ] || [ -n "${allocs}" ]; then
     echo "cross_check: $(basename "${archive}"): ${throwers} throw/unwind symbol(s)" >&2

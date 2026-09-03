@@ -49,8 +49,10 @@ set(CMAKE_CXX_FLAGS_INIT "${fms_arm_flags} -fno-rtti")
 
 # Look for programs on the host, and for everything else only in the target
 # sysroot: a host header found by accident would make the check pass for the
-# wrong reason.
-set(CMAKE_FIND_ROOT_PATH_MODE_PROGRAM BEFORE)
+# wrong reason.  NEVER is what "the host only" is spelled here - the value names
+# what happens to CMAKE_FIND_ROOT_PATH, not where the search starts, and the
+# three it accepts are ONLY, NEVER and BOTH.
+set(CMAKE_FIND_ROOT_PATH_MODE_PROGRAM NEVER)
 set(CMAKE_FIND_ROOT_PATH_MODE_LIBRARY ONLY)
 set(CMAKE_FIND_ROOT_PATH_MODE_INCLUDE ONLY)
 set(CMAKE_FIND_ROOT_PATH_MODE_PACKAGE ONLY)

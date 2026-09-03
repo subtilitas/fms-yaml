@@ -644,8 +644,9 @@ if(FMS_INSTALL)
     DESTINATION ${CMAKE_INSTALL_LIBDIR}/cmake/fms_yaml)
 
   # The config file asks for yaml-cpp only when fms_config is part of the
-  # package, which it always is - kept as a variable so the question is asked
-  # in one place if that ever stops being true.
+  # package, which -DFMS_BUILD_CONFIG=OFF is exactly the case it is not: a
+  # consumer of that package needs neither yaml-cpp nor a find_dependency that
+  # would fail without it.
   set(FMS_INSTALLED_CONFIG ${FMS_BUILD_CONFIG})
   configure_package_config_file(
     ${CMAKE_CURRENT_SOURCE_DIR}/cmake/fms_yamlConfig.cmake.in
