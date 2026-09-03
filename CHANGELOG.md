@@ -6,6 +6,22 @@ numbers promise is in [docs/stability.md](docs/stability.md).
 
 ## Unreleased
 
+### Added
+
+- `Status::FileNotReadable`, for a path that opens and whose first read fails.
+
+### Fixed
+
+- A path that opened and could not be read — a directory, or a device such as
+  `/proc/self/mem` — reached yaml-cpp, which leaked 2048 bytes per call:
+  `YAML::Stream` allocates its prefetch buffer with a raw `new[]` in its
+  member-initializer list and frees it only in `~Stream`, and the
+  `std::ios_failure` libstdc++ raises from the failed read escapes the
+  constructor, so that destructor never runs. A loader retrying such a path
+  leaked it once per attempt. The path is now rejected before yaml-cpp sees it,
+  and reported as `FileNotReadable` rather than `ParseError`. Upstream defect,
+  reported against yaml-cpp 0.8.0.
+
 ## [0.9.0] - 2026-09-03
 
 The version says 0.9 rather than 0.3 because what changed is the ground the

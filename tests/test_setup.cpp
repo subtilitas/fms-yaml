@@ -303,3 +303,16 @@ TEST_CASE("clear returns a Setup to the state it was constructed in") {
   CHECK(pair.setup.io().state_channel.empty());
   CHECK(pair.setup.io().endpoint.empty());
 }
+
+TEST_CASE("the setup loader refuses an unreadable path the same way") {
+  fms::Setup               setup;
+  fms::config::Diagnostics diagnostics;
+
+  const fms::Status status =
+      fms::config::load_setup_file(FMS_SOURCE_DIR "/examples", setup, diagnostics);
+
+  CHECK(status != fms::Status::Ok);
+  CHECK(status != fms::Status::ParseError);
+  CHECK((status == fms::Status::FileNotReadable || status == fms::Status::FileNotFound));
+  CHECK(setup.initial_name().size() == 0);
+}

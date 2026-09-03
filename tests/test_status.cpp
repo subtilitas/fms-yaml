@@ -25,6 +25,7 @@ namespace {
 constexpr fms::Status kAllStatuses[] = {
     fms::Status::Ok,
     fms::Status::FileNotFound,
+    fms::Status::FileNotReadable,
     fms::Status::ParseError,
     fms::Status::SchemaError,
     fms::Status::DuplicateName,

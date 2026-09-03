@@ -7,6 +7,7 @@
 // its whole body in try/catch, so an exception can never leave this file.
 #include "fms/yaml_loader.hpp"
 
+#include <cerrno>
 #include <cstdarg>
 #include <cstdio>
 #include <cstring>
@@ -452,13 +453,62 @@ std::FILE* open_for_reading(const char* path) {
 #endif
 }
 
+/// errno as text, into storage the caller owns.
+///
+/// std::strerror hands back a pointer to a buffer shared across the process,
+/// which clang-tidy reports as concurrency-mt-unsafe and MSVC deprecates.  Every
+/// platform has a bounded variant and no two agree on its name or its
+/// signature, so it is spelled per platform for the same reason
+/// open_for_reading above is.
+void describe_errno(int code, char* out, std::size_t size) {
+#if defined(_MSC_VER)
+  if (strerror_s(out, size, code) != 0) {
+    (void)std::snprintf(out, size, "errno %d", code);
+  }
+#elif defined(__GLIBC__)
+  // The GNU form returns the message and may leave `out` untouched.
+  const char* message = strerror_r(code, out, size);
+  if (message != out) {
+    (void)std::snprintf(out, size, "%s", message);
+  }
+#else
+  if (strerror_r(code, out, size) != 0) {
+    (void)std::snprintf(out, size, "errno %d", code);
+  }
+#endif
+}
+
 bool file_is_readable(const char* path, Diagnostics& diagnostics) {
   std::FILE* probe = open_for_reading(path);
   if (probe == nullptr) {
     set_message(diagnostics, Status::FileNotFound, -1, "cannot open '%s'", path);
     return false;
   }
+
+  // Opening proves nothing on its own.  A directory opens for reading on POSIX
+  // and fails on the first read, and so does a device such as /proc/self/mem.
+  // Handing such a path to yaml-cpp costs 2048 bytes every time: YAML::Stream
+  // allocates its prefetch buffer with a raw new[] in its member-initializer
+  // list, then reads through the stream buffer directly, and the std::ios_
+  // failure that libstdc++ raises from a failed read(2) escapes the
+  // constructor - so ~Stream, the only delete[], never runs.  guarded() catches
+  // the exception and reports it correctly; the memory is gone by then.  A
+  // loader that retries, waiting for removable media whose mount point is a
+  // directory, leaks it once per attempt.
+  //
+  // So the probe reads a byte.  End of file is not an error - an empty file and
+  // /dev/null are both legitimately empty - which is what ferror distinguishes.
+  (void)std::fgetc(probe);
+  const bool unreadable = std::ferror(probe) != 0;
+  const int  reason     = errno;
   (void)std::fclose(probe);
+
+  if (unreadable) {
+    char why[64];
+    describe_errno(reason, why, sizeof(why));
+    set_message(diagnostics, Status::FileNotReadable, -1, "cannot read '%s': %s", path, why);
+    return false;
+  }
   return true;
 }
 
@@ -515,7 +565,7 @@ Status load_setup_file(const char* path, Setup& setup, Diagnostics& diagnostics)
   }
   if (!file_is_readable(path, diagnostics)) {
     setup.clear();
-    return Status::FileNotFound;
+    return diagnostics.status;
   }
   return guarded(setup, diagnostics, [path] { return YAML::LoadFile(path); }, parse_setup);
 }
@@ -537,7 +587,7 @@ Status load_machine_file(const char* path, Model& model, Diagnostics& diagnostic
   }
   if (!file_is_readable(path, diagnostics)) {
     model.clear();
-    return Status::FileNotFound;
+    return diagnostics.status;
   }
   return guarded(model, diagnostics, [path] { return YAML::LoadFile(path); }, parse_machine);
 }

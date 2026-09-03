@@ -26,6 +26,7 @@ const char* to_string(Status status) noexcept {
   switch (status) {
     case Status::Ok:                 return "ok";
     case Status::FileNotFound:       return "config file not found";
+    case Status::FileNotReadable:    return "config file cannot be read";
     case Status::ParseError:         return "YAML parse error";
     case Status::SchemaError:        return "config does not match the schema";
     case Status::DuplicateName:      return "duplicate name";

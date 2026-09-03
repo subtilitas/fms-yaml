@@ -219,3 +219,40 @@ TEST_CASE("a failed load leaves nothing of the model behind") {
   CHECK(fixture.model.state_count() == 0);
   CHECK(fixture.model.trigger_count() == 0);
 }
+
+TEST_CASE("a path that opens and cannot be read is refused before yaml-cpp sees it") {
+  // A directory opens for reading on POSIX and fails on the first read; on
+  // Windows fopen refuses it outright.  Either way the loader has to reject it
+  // itself: handing it to yaml-cpp leaks 2048 bytes per call, because
+  // YAML::Stream allocates its prefetch buffer before the read that throws and
+  // frees it only in a destructor that never runs.
+  //
+  // So this asserts what both platforms owe: rejected, described as a file
+  // problem rather than a parse problem, and nothing left in the model.
+  fms::Model               model;
+  fms::config::Diagnostics diagnostics;
+
+  const fms::Status status =
+      fms::config::load_machine_file(FMS_SOURCE_DIR "/examples", model, diagnostics);
+
+  CHECK(status != fms::Status::Ok);
+  CHECK(status != fms::Status::ParseError);
+  CHECK((status == fms::Status::FileNotReadable || status == fms::Status::FileNotFound));
+  CHECK(model.state_count() == 0);
+  CHECK(model.trigger_count() == 0);
+  CHECK(diagnostics.message.size() > 0);
+}
+
+TEST_CASE("an empty file is empty, not unreadable") {
+  // The probe reads a byte to decide, so end of file has to stay distinct from
+  // a read error or every empty file would be refused for the wrong reason.
+  fms::Model               model;
+  fms::config::Diagnostics diagnostics;
+
+  const fms::Status status =
+      fms::config::load_machine_file(FMS_SOURCE_DIR "/LICENSE", model, diagnostics);
+
+  // LICENSE is readable and is not a machine file: it gets as far as the schema.
+  CHECK(status != fms::Status::FileNotReadable);
+  CHECK(status != fms::Status::FileNotFound);
+}
