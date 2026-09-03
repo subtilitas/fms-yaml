@@ -393,6 +393,10 @@ drain it from the same loop — do not call `fire()` concurrently.
 ## Porting to a bare-metal target
 
 1. Keep `fms_core`; it needs only `<cstdint>`, `<cstddef>`, `<cstring>` and ETL.
+   `-DFMS_BUILD_CONFIG=OFF` drops the loader and yaml-cpp with it; the `cross`
+   CI job builds exactly that for a freestanding Cortex-M4 through
+   `cmake/arm-none-eabi.cmake`, so the claim in this line is compiled on every
+   push rather than asserted.
 2. Write an `IPort` for your link (CAN, UART, shared memory).
 3. Load the config on the host and ship the `Model`, or keep yaml-cpp on a
    target that can afford a heap during boot. Nothing downstream cares where the

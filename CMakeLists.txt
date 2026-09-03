@@ -7,6 +7,12 @@ project(fms_yaml VERSION 0.2.1 LANGUAGES CXX)
 option(FMS_BUILD_TESTS    "Build unit tests"                        ON)
 option(FMS_BUILD_EXAMPLES "Build the example applications"          ON)
 option(FMS_BUILD_CONSOLE  "Build the std::cin/std::cout port"       ON)
+# The YAML loader is the only part that needs yaml-cpp, a filesystem and
+# exceptions.  A firmware build does not want any of the three: it loads the
+# configuration on the host and ships the Model, which is the porting route
+# docs/architecture.md describes.  Turning it off is what lets the tree be
+# cross-compiled for a target at all.
+option(FMS_BUILD_CONFIG   "Build the YAML loader"                    ON)
 option(FMS_BUILD_INSPECT  "Build the linter and the diagram exporter"  ON)
 option(FMS_FETCH_DEPS     "Download dependencies with FetchContent" ON)
 
@@ -20,6 +26,17 @@ else()
   set(fms_install_default ON)
 endif()
 option(FMS_INSTALL "Generate install and package rules" ${fms_install_default})
+
+# Everything that reads a config file goes through fms_config, so without it
+# there is no example to run and most of the suite has nothing to load.  Saying
+# so here beats a link error several hundred lines later.
+if(NOT FMS_BUILD_CONFIG)
+  if(FMS_BUILD_TESTS OR FMS_BUILD_EXAMPLES)
+    message(FATAL_ERROR
+      "FMS_BUILD_CONFIG=OFF needs -DFMS_BUILD_TESTS=OFF -DFMS_BUILD_EXAMPLES=OFF: "
+      "both load a configuration, which is what fms_config is.")
+  endif()
+endif()
 
 if(FMS_INSTALL AND FMS_FETCH_DEPS)
   message(FATAL_ERROR
@@ -182,7 +199,11 @@ endif()
 fms_make_dependency_system(etl::etl)
 
 # --- yaml-cpp ---------------------------------------------------------------
-if(FMS_FETCH_DEPS)
+# Only fms_config uses it, so a build without the loader neither fetches nor
+# looks for it - which is the difference between cross-compiling and not.
+if(NOT FMS_BUILD_CONFIG)
+  # nothing to do
+elseif(FMS_FETCH_DEPS)
   set(YAML_CPP_BUILD_TESTS   OFF CACHE BOOL "" FORCE)
   set(YAML_CPP_BUILD_TOOLS   OFF CACHE BOOL "" FORCE)
   set(YAML_CPP_BUILD_CONTRIB OFF CACHE BOOL "" FORCE)
@@ -312,12 +333,14 @@ fms_instrument(fms_core)
 # ---------------------------------------------------------------------------
 # fms_config : the *only* place yaml-cpp (and therefore exceptions) is used.
 # ---------------------------------------------------------------------------
-add_library(fms_config STATIC src/config/yaml_loader.cpp)
-add_library(fms::config ALIAS fms_config)
-target_link_libraries(fms_config PUBLIC fms_core PRIVATE yaml-cpp::yaml-cpp)
-fms_enable_exceptions(fms_config)
-fms_warnings(fms_config)
-fms_instrument(fms_config)
+if(FMS_BUILD_CONFIG)
+  add_library(fms_config STATIC src/config/yaml_loader.cpp)
+  add_library(fms::config ALIAS fms_config)
+  target_link_libraries(fms_config PUBLIC fms_core PRIVATE yaml-cpp::yaml-cpp)
+  fms_enable_exceptions(fms_config)
+  fms_warnings(fms_config)
+  fms_instrument(fms_config)
+endif()
 
 # ---------------------------------------------------------------------------
 # fms_console : an fms::IPort over std::cin / std::cout.  Separate target
@@ -362,7 +385,7 @@ fms_instrument(fms_alloc_guard)
 # ---------------------------------------------------------------------------
 # Examples
 # ---------------------------------------------------------------------------
-if(FMS_BUILD_EXAMPLES AND FMS_BUILD_CONSOLE)
+if(FMS_BUILD_EXAMPLES AND FMS_BUILD_CONSOLE AND FMS_BUILD_CONFIG)
   add_executable(car_console examples/car/main.cpp)
   target_link_libraries(car_console PRIVATE fms_core fms_config fms_console)
   if(FMS_BUILD_INSPECT)
@@ -478,7 +501,9 @@ FMS_CAPACITY_FLAGS=\"${fms_capacity_flags}\"
      AND EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/tools/symbol_check.sh")
     set(fms_symbol_env "NM=\"${CMAKE_NM}\"\n")
     string(APPEND fms_symbol_env "FMS_CORE_LIB=\"$<TARGET_FILE:fms_core>\"\n")
-    string(APPEND fms_symbol_env "FMS_CONFIG_LIB=\"$<TARGET_FILE:fms_config>\"\n")
+    if(FMS_BUILD_CONFIG)
+      string(APPEND fms_symbol_env "FMS_CONFIG_LIB=\"$<TARGET_FILE:fms_config>\"\n")
+    endif()
     string(APPEND fms_symbol_env
       "FMS_ALLOC_GUARD_LIB=\"$<TARGET_FILE:fms_alloc_guard>\"\n")
     if(FMS_BUILD_CONSOLE)
@@ -567,7 +592,10 @@ endif()
 if(FMS_INSTALL)
   include(CMakePackageConfigHelpers)
 
-  set(fms_install_targets fms_core fms_config fms_alloc_guard)
+  set(fms_install_targets fms_core fms_alloc_guard)
+  if(FMS_BUILD_CONFIG)
+    list(APPEND fms_install_targets fms_config)
+  endif()
   if(FMS_BUILD_CONSOLE)
     list(APPEND fms_install_targets fms_console)
   endif()
@@ -618,7 +646,7 @@ if(FMS_INSTALL)
   # The config file asks for yaml-cpp only when fms_config is part of the
   # package, which it always is - kept as a variable so the question is asked
   # in one place if that ever stops being true.
-  set(FMS_INSTALLED_CONFIG TRUE)
+  set(FMS_INSTALLED_CONFIG ${FMS_BUILD_CONFIG})
   configure_package_config_file(
     ${CMAKE_CURRENT_SOURCE_DIR}/cmake/fms_yamlConfig.cmake.in
     ${PROJECT_BINARY_DIR}/fms_yamlConfig.cmake

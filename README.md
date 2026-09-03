@@ -44,11 +44,16 @@ is deliberately not covered, and which toolchains move only with a breaking
 version — is in [docs/stability.md](docs/stability.md). Changes per release are
 in [CHANGELOG.md](CHANGELOG.md).
 
-Targets: `fms_core` (the machine, no transport), `fms_config` (the YAML
-loader), `fms_console` (the `<iostream>` port, optional), `fms_inspect` (linter
-and diagram exporter, optional), `fms_alloc_guard` (optional). Nothing in
-`fms_inspect` is reachable from the run phase, so a firmware build links
+Targets: `fms_core` (the machine, no transport), `fms_config` (the YAML loader,
+optional), `fms_console` (the `<iostream>` port, optional), `fms_inspect`
+(linter and diagram exporter, optional), `fms_alloc_guard` (optional). Nothing
+in `fms_inspect` is reachable from the run phase, so a firmware build links
 `fms_core` and stops there.
+
+`-DFMS_BUILD_CONFIG=OFF` drops the loader, and with it yaml-cpp, the filesystem
+and the one translation unit that uses exceptions. That is the shape a target
+build takes — `cmake/arm-none-eabi.cmake` and `tools/cross_check.sh` compile it
+for a freestanding Cortex-M4 on every push.
 
 ## Installing
 
@@ -435,6 +440,7 @@ Every push runs the same gates, each answering a question the others cannot.
 | Documentation | the README's diagram regenerated and compared | `ctest` → `car_diagram_check` |
 | Capacity ABI | a probe built with a changed capacity must fail to link | `ctest` → `abi_guard` |
 | No exceptions, no allocation | read out of the built archives with `nm`, not inferred from the flags | `ctest` → `symbol_check` |
+| Bare metal | `fms_core` and `fms_inspect` compiled for a freestanding Cortex-M4 | `ci.yml` → `cross` |
 | Packaging | install it, then build a consumer that knows it only through `find_package` | `ci.yml` → `install` |
 | Deep static analysis | CodeQL (`security-and-quality`) over a real build | `codeql.yml` |
 
@@ -500,7 +506,7 @@ examples/car/         car.setup.yaml + car.machine.yaml + a main() that adds no 
 tests/                doctest suites, the no-allocation proof, and a scripted console session
 tests/consumer/       a project that knows the library only through find_package
 tools/                the scripts the quality gates run
-cmake/                the package config template find_package(fms_yaml) lands in
+cmake/                the package config template, and an arm-none-eabi toolchain file
 docs/                 schema.md, architecture.md, stability.md
 ```
 
