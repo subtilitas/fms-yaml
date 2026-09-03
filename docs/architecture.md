@@ -286,13 +286,31 @@ Tuned to the car config (`-DFMS_MAX_STATES=8 -DFMS_MAX_TRIGGERS=12
 -DFMS_MAX_TRANSITIONS_PER_STATE=5 -DFMS_MAX_CHANNEL_LENGTH=31
 -DFMS_MAX_CONDITIONS=16`), `fms::Model` is 11 328 B.
 
-Verifying the two hard constraints on the built artefacts:
+## The two hard constraints, checked on the artefacts
+
+"No exceptions" and "no allocation" are produced by compiler flags and are
+properties of the archives. `tools/symbol_check.sh` reads the archives, as the
+`symbol_check` test:
+
+| Archive | Throw or unwind symbols | References an allocator |
+|---|---|---|
+| `fms_core` | none | never |
+| `fms_inspect` | none | never — the linter and the exporter are documented as safe to run on a target |
+| `fms_console` | none | allowed: it pulls in `<iostream>`, whose internals are not ours |
+| `fms_alloc_guard` | none | `malloc` and `free`, which is what implementing `operator new` takes |
+| `fms_config` | **required** | allowed |
+
+`fms_config` is checked the other way round on purpose. It is the one
+translation unit compiled `-fexceptions`, and it is a firewall only while it
+still has the machinery to catch with — a `try`/`catch(...)` deleted by accident
+would look like an improvement to every other row in that table.
 
 ```sh
-nm -C libfms_core.a | grep -cE '__cxa_throw|_Unwind_Resume'      # 0
-nm -C libfms_core.a | grep -E ' U (operator new|malloc)'         # empty
-nm -C libfms_config.a | grep -cE '__cxa_throw|_Unwind_Resume'    # non-zero: the firewall
+bash tools/symbol_check.sh build
 ```
+
+Skipped for coverage and sanitizer builds, whose runtimes bring symbols of their
+own, and on MSVC, where the names are different.
 
 ## The capacity guard
 
@@ -362,6 +380,7 @@ about linking, and one toolchain proving it is enough.
 | `car_config_check` (ctest) | the shipped configuration loaded *and linted* by the real binary |
 | `car_diagram_check` (ctest) | the README's diagram regenerated from the machine file and compared |
 | `abi_guard` (ctest) | a probe compiled with a changed capacity fails to link, and one with the library's own capacities does not |
+| `symbol_check` (ctest) | the archives carry no throw or unwind symbols and no allocator reference, and `fms_config` still carries the unwind machinery |
 | `car_version` (ctest) | the binary reports the version `project()` declared |
 | `install` (CI) | the installed package resolves through `find_package`, and `tests/consumer` links and runs against it |
 

@@ -434,6 +434,7 @@ Every push runs the same gates, each answering a question the others cannot.
 | Configuration | the shipped YAML loaded and linted by the real binary | `ctest` → `car_config_check` |
 | Documentation | the README's diagram regenerated and compared | `ctest` → `car_diagram_check` |
 | Capacity ABI | a probe built with a changed capacity must fail to link | `ctest` → `abi_guard` |
+| No exceptions, no allocation | read out of the built archives with `nm`, not inferred from the flags | `ctest` → `symbol_check` |
 | Packaging | install it, then build a consumer that knows it only through `find_package` | `ci.yml` → `install` |
 | Deep static analysis | CodeQL (`security-and-quality`) over a real build | `codeql.yml` |
 
