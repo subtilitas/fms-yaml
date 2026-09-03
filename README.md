@@ -23,7 +23,7 @@ decision.
 | Built on ETL | `etl::flat_map`, `etl::vector`, `etl::string` throughout |
 | States and triggers stored with their dependencies in a flat map | `flat_map<StateId, StateNode>`, and inside each node `flat_map<TriggerId, Alternatives>` |
 | No dynamic allocation after setup | fixed capacities from `fms/limits.hpp`; `tests/test_no_alloc.cpp` replaces global `operator new` and traps it |
-| One capacity configuration per program | `cmake -DFMS_MAX_STATES=8` reaches every target; a translation unit that disagrees fails to link (`fms/abi.hpp`) |
+| One capacity configuration per program | `cmake -DFMS_MAX_STATES=8` reaches every target; a translation unit that disagrees fails to link as soon as it builds a `Model`, `Setup`, `Args` or `Runtime` (`fms/abi.hpp`) |
 | No exceptions | compiled `-fno-exceptions`; the one TU that talks to yaml-cpp is the firewall and returns `Status` |
 | Interface left open | `fms::IPort` is eight virtual methods; the shipped implementations are a console port and an in-memory test port |
 | Config is a run-time input | the build never opens the YAML; `--check` validates a config by running the binary |
@@ -58,11 +58,15 @@ dependency built inside the same tree, which is why `FMS_INSTALL` requires
 `FMS_FETCH_DEPS=OFF` and says so rather than failing later:
 
 ```sh
-cmake -S . -B build -DFMS_FETCH_DEPS=OFF -DFMS_INSTALL=ON \
+cmake -S . -B build -DFMS_FETCH_DEPS=OFF -DFMS_INSTALL=ON -DFMS_BUILD_TESTS=OFF \
       -DCMAKE_PREFIX_PATH=/opt/deps -DCMAKE_INSTALL_PREFIX=/opt/fms
 cmake --build build -j
 cmake --install build
 ```
+
+`FMS_BUILD_TESTS=OFF` because the suite needs doctest, and `FMS_FETCH_DEPS=OFF`
+means nothing is downloaded — install doctest as well and the tests build here
+too.
 
 Then, in another project:
 

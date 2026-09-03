@@ -10,7 +10,7 @@
 // allocated 21120 for.
 //
 // So the capacities are pasted into the name of a symbol that fms_core defines
-// once and the constructors of Model and Setup reference.  A mismatch is an
+// once and the constructors of Model, Setup, Args and Runtime reference.  A mismatch is an
 // undefined reference naming both configurations, at link time, rather than a
 // corrupted object at run time.
 //
@@ -29,11 +29,14 @@
 #define FMS_ABI_JOIN(a, b)  FMS_ABI_PASTE(a, b)
 
 // Every capacity that appears in the layout of a type the caller allocates.
-// FMS_MAX_FINDINGS is one of them: lint::Report is an etl::vector alias the
-// caller declares and fms_inspect appends to.  Report is an alias and cannot
-// carry a constructor of its own, so it is covered indirectly - analyse() takes
-// the Model the report is about, and constructing that Model is what pins the
-// configuration.
+// FMS_MAX_FINDINGS is one of them: lint::Report is `etl::vector<Finding, N>`,
+// which the caller declares and fms_inspect appends to.  Being an alias it has
+// no constructor of ours to pin, and it needs none - the capacity is a template
+// argument, so it is already in the mangled name of every function that takes a
+// Report.  A caller compiled with FMS_MAX_FINDINGS=4 fails on
+// `fms::lint::analyse(fms::Model const&, unsigned short,
+// etl::vector<fms::lint::Finding, 4ul>&)`.  It is in the tag anyway, so that the
+// diagnostic names the whole configuration.
 #define FMS_ABI_ID_01 FMS_ABI_JOIN(FMS_MAX_STATES,     FMS_MAX_TRIGGERS)
 #define FMS_ABI_ID_02 FMS_ABI_JOIN(FMS_ABI_ID_01, FMS_MAX_TRANSITIONS_PER_STATE)
 #define FMS_ABI_ID_03 FMS_ABI_JOIN(FMS_ABI_ID_02, FMS_MAX_ALTERNATIVES)
@@ -68,9 +71,11 @@ namespace fms::abi {
 /// channel length, message length, findings.
 constexpr const char* tag() noexcept { return FMS_ABI_TAG; }
 
-/// Called by Model's and Setup's constructors.  Every program builds one of
-/// each, so every program resolves this name, and it resolves only against an
-/// fms_core built with the same capacities.
+/// Called by the constructors of Model, Setup, Args and Runtime - every type
+/// whose layout a capacity decides and whose storage the caller provides.  A
+/// program that uses this library builds at least one of them, so it resolves
+/// this name, and it resolves only against an fms_core built with the same
+/// capacities.
 inline void pin() noexcept { FMS_ABI_SYMBOL(); }
 
 }  // namespace fms::abi

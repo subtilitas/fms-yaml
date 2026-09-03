@@ -420,10 +420,12 @@ TEST_CASE("a full report says so rather than pretending it looked at everything"
     CHECK(report.full());
   } else {
     // A tree configured with few states and a large report cannot overflow one;
-    // there the contract is that nothing was dropped.
+    // there the contract is that nothing was dropped.  It can still end up
+    // exactly full - kMaxStates 16 against kMaxFindings 32 - and a report that
+    // is full without having dropped anything is not a capacity error.
     CHECK(fms::lint::analyse(model, 0, report) == fms::Status::Ok);
     CHECK(report.size() == findings);
-    CHECK_FALSE(report.full());
+    CHECK(report.full() == (findings == fms::limits::kMaxFindings));
   }
 }
 

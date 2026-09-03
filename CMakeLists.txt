@@ -216,10 +216,15 @@ configure_file(
   ${PROJECT_BINARY_DIR}/generated/fms/version.hpp
   @ONLY)
 
+# GNUInstallDirs here rather than beside the install rules: CMAKE_INSTALL_INCLUDEDIR
+# is part of the interface below, and hardcoding "include" makes the exported
+# target name a directory the headers are not in under any other layout.
+include(GNUInstallDirs)
+
 target_include_directories(fms_core PUBLIC
   $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/include>
   $<BUILD_INTERFACE:${PROJECT_BINARY_DIR}/generated>
-  $<INSTALL_INTERFACE:include>)
+  $<INSTALL_INTERFACE:${CMAKE_INSTALL_INCLUDEDIR}>)
 
 # ETL_LOG_ERRORS must be visible to every TU that includes an ETL header,
 # otherwise ETL_ASSERT expands differently in different TUs (ODR).  ETL only
@@ -412,8 +417,13 @@ if(FMS_BUILD_TESTS)
   # requirements of their own, so a probe linked without them would fail for a
   # reason that has nothing to do with capacities.
   # ---------------------------------------------------------------------------
+  # The script lives in tools/, which the source distribution does not carry,
+  # so its absence is a package built from a release tarball rather than a
+  # mistake - the same reason car_diagram_check tests for its script below.  A
+  # test that fails because its own file is missing tests nothing.
   if(NOT MSVC AND NOT FMS_ENABLE_COVERAGE AND NOT FMS_ENABLE_SANITIZERS
-     AND CMAKE_CXX_COMPILER_ID MATCHES "GNU|Clang")
+     AND CMAKE_CXX_COMPILER_ID MATCHES "GNU|Clang"
+     AND EXISTS ${CMAKE_CURRENT_SOURCE_DIR}/tools/abi_guard_check.sh)
     file(GENERATE OUTPUT ${CMAKE_BINARY_DIR}/abi_probe.env CONTENT
 "CXX=\"${CMAKE_CXX_COMPILER}\"
 FMS_INCLUDE=\"${CMAKE_CURRENT_SOURCE_DIR}/include\"
@@ -497,7 +507,6 @@ endif()
 # FMS_BUILD_CONSOLE was off would fail at the consumer's configure step.
 # ---------------------------------------------------------------------------
 if(FMS_INSTALL)
-  include(GNUInstallDirs)
   include(CMakePackageConfigHelpers)
 
   set(fms_install_targets fms_core fms_config fms_alloc_guard)
@@ -516,11 +525,13 @@ if(FMS_INSTALL)
     set_target_properties(${target} PROPERTIES EXPORT_NAME ${export_name})
   endforeach()
 
+  # No INCLUDES DESTINATION: fms_core already carries
+  # $<INSTALL_INTERFACE:${CMAKE_INSTALL_INCLUDEDIR}>, and naming the directory
+  # in both places puts it in the exported target twice.
   install(TARGETS ${fms_install_targets}
     EXPORT fms_yamlTargets
-    ARCHIVE  DESTINATION ${CMAKE_INSTALL_LIBDIR}
-    LIBRARY  DESTINATION ${CMAKE_INSTALL_LIBDIR}
-    INCLUDES DESTINATION ${CMAKE_INSTALL_INCLUDEDIR})
+    ARCHIVE DESTINATION ${CMAKE_INSTALL_LIBDIR}
+    LIBRARY DESTINATION ${CMAKE_INSTALL_LIBDIR})
 
   # A header whose target was not built is a promise the package cannot keep,
   # so the optional ones follow their targets.  memory_port.hpp is not among

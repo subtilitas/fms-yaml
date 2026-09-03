@@ -17,6 +17,7 @@
 #include <etl/flat_map.h>
 
 #include "fms/limits.hpp"
+#include "fms/abi.hpp"
 #include "fms/status.hpp"
 #include "fms/types.hpp"
 
@@ -26,7 +27,11 @@ class Args {
  public:
   using Map = etl::flat_map<Name, StringView, limits::kMaxArguments>;
 
-  Args() noexcept = default;
+  /// The body is the link-time capacity guard, not an oversight: the map's
+  /// capacity is FMS_MAX_ARGUMENTS, so an Args built by a translation unit that
+  /// disagrees is a different object from the one fms_core writes.  See
+  /// fms/abi.hpp.
+  Args() noexcept { abi::pin(); }
 
   /// Parses `text` - whitespace separated `key=value` pairs - keeping views into
   /// it.  `text` must outlive this object.
