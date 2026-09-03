@@ -33,6 +33,22 @@ fi
 
 arm-none-eabi-g++ --version | head -1
 
+# On Ubuntu the compiler, the C library and the C++ headers are three packages,
+# and only the first is named gcc-arm-none-eabi.  Without the others every
+# translation unit fails on <cstddef>, thirty times over, which reads as the
+# library not compiling rather than the toolchain being half installed.
+probe="$(mktemp -d)"
+trap 'rm -rf "${probe}"' EXIT
+printf '#include <cstddef>\n#include <type_traits>\nint main() { return 0; }\n' \
+  > "${probe}/probe.cpp"
+if ! arm-none-eabi-g++ -mcpu=cortex-m4 -mthumb -ffreestanding -fsyntax-only \
+       "${probe}/probe.cpp" > "${probe}/probe.log" 2>&1; then
+  echo "cross_check: the toolchain cannot compile <cstddef> and <type_traits>:" >&2
+  head -3 "${probe}/probe.log" >&2
+  echo "             apt install libnewlib-arm-none-eabi libstdc++-arm-none-eabi-newlib" >&2
+  exit 1
+fi
+
 cmake -S "${root}" -B "${build}" \
   -DCMAKE_TOOLCHAIN_FILE="${root}/cmake/arm-none-eabi.cmake" \
   -DCMAKE_BUILD_TYPE=Release \

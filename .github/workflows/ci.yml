@@ -240,10 +240,16 @@ jobs:
     steps:
       - uses: actions/checkout@v6
 
+      # gcc-arm-none-eabi is the compiler and nothing else on Ubuntu: the C
+      # library and the C++ headers are separate packages, and without them
+      # every translation unit fails on <cstddef>.
       - name: Install the ARM toolchain
         run: |
           sudo apt-get update
-          sudo apt-get install --no-install-recommends -y gcc-arm-none-eabi
+          sudo apt-get install --no-install-recommends -y \
+            gcc-arm-none-eabi \
+            libnewlib-arm-none-eabi \
+            libstdc++-arm-none-eabi-newlib
 
       - name: Cache fetched dependencies
         uses: actions/cache@v6
