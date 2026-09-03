@@ -1,9 +1,20 @@
 // SPDX-License-Identifier: MIT
 //
 // Compile-time capacities.  The whole machine is sized from these numbers, so
-// it is one fixed object with a footprint known at build time.  Override them
-// from the build system, e.g.
-//     target_compile_definitions(app PRIVATE FMS_MAX_STATES=8)
+// it is one fixed object with a footprint known at build time.
+//
+// They are template arguments of the containers inside Model, Setup, Args,
+// Runtime and lint::Report, so they are part of the layout of those types and
+// every translation unit in a program must agree on them.  Set them once, on
+// the command line, and the build carries them to every target as PUBLIC
+// compile definitions on fms_core:
+//
+//     cmake -S . -B build -DFMS_MAX_STATES=8 -DFMS_MAX_TRIGGERS=12
+//
+// Setting one on a single target instead is an ODR violation the linker does
+// not see: the caller and the library then disagree about how large a Model is.
+// fms/abi.hpp makes that a link error; a capacity added here has to be added
+// there too, and tools/abi_guard_check.sh fails the build if it is not.
 #ifndef FMS_LIMITS_HPP
 #define FMS_LIMITS_HPP
 

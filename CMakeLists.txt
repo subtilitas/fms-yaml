@@ -180,6 +180,7 @@ fms_make_dependency_system(yaml-cpp::yaml-cpp)
 # no transport.  fms::IPort is an interface with no implementation here.
 # ---------------------------------------------------------------------------
 add_library(fms_core STATIC
+  src/abi.cpp
   src/status.cpp
   src/args.cpp
   src/condition.cpp
@@ -197,6 +198,59 @@ target_include_directories(fms_core PUBLIC
 # otherwise ETL_ASSERT expands differently in different TUs (ODR).  ETL only
 # throws when ETL_THROW_EXCEPTIONS is defined - we never define it.
 target_compile_definitions(fms_core PUBLIC ETL_LOG_ERRORS)
+
+# ---------------------------------------------------------------------------
+# Capacities.
+#
+# The FMS_MAX_* values in include/fms/limits.hpp are template arguments of the
+# containers inside Model, Setup, Args, Runtime and lint::Report, so they decide
+# the layout of those types.  Every translation unit in a program must therefore
+# see the same values - the same ODR requirement as ETL_LOG_ERRORS above, and
+# with a worse failure: the link succeeds and the two halves disagree about how
+# large a Model is.
+#
+# So a capacity is set once, on the command line, and travels as a PUBLIC
+# compile definition on fms_core to everything that links it, including the
+# installed package's consumers:
+#
+#     cmake -S . -B build -DFMS_MAX_STATES=8 -DFMS_MAX_TRIGGERS=12
+#
+# Unset means "whatever limits.hpp says", so the header stays the one place the
+# defaults are written down.  fms/abi.hpp catches the case this cannot reach: a
+# translation unit compiled by hand, outside this build, against a prebuilt
+# library.
+set(FMS_CAPACITIES
+  FMS_MAX_STATES
+  FMS_MAX_TRIGGERS
+  FMS_MAX_TRANSITIONS_PER_STATE
+  FMS_MAX_ALTERNATIVES
+  FMS_MAX_CONDITIONS_PER_GUARD
+  FMS_MAX_CONDITIONS
+  FMS_MAX_ARGUMENTS
+  FMS_MAX_NAME_LENGTH
+  FMS_MAX_CHANNEL_LENGTH
+  FMS_MAX_MESSAGE_LENGTH
+  FMS_MAX_FINDINGS)
+
+foreach(capacity IN LISTS FMS_CAPACITIES)
+  if(DEFINED ${capacity})
+    if(NOT "${${capacity}}" MATCHES "^[1-9][0-9]*$")
+      message(FATAL_ERROR "${capacity} must be a positive integer, got '${${capacity}}'")
+    endif()
+    target_compile_definitions(fms_core PUBLIC ${capacity}=${${capacity}})
+    list(APPEND fms_capacity_summary "${capacity}=${${capacity}}")
+  endif()
+endforeach()
+
+if(fms_capacity_summary)
+  list(JOIN fms_capacity_summary " " fms_capacity_line)
+  message(STATUS "fms capacities: ${fms_capacity_line}")
+  # The same list as compiler flags, for tools/abi_guard_check.sh: its probe is
+  # compiled outside this build and has to be told what the tree was configured
+  # with, or it would differ from the library it is meant to match.
+  list(TRANSFORM fms_capacity_summary PREPEND "-D" OUTPUT_VARIABLE fms_capacity_flags)
+  list(JOIN fms_capacity_flags " " fms_capacity_flags)
+endif()
 target_link_libraries(fms_core PUBLIC etl::etl)
 fms_disable_exceptions(fms_core)
 fms_warnings(fms_core)
@@ -293,6 +347,7 @@ if(FMS_BUILD_TESTS)
 
   add_executable(fms_tests
     tests/test_main.cpp
+    tests/test_abi.cpp
     tests/test_args.cpp
     tests/test_condition.cpp
     tests/test_status.cpp
@@ -319,6 +374,31 @@ if(FMS_BUILD_TESTS)
     fms_warnings(fms_tests)   # tests keep exceptions: doctest needs them
   fms_instrument(fms_tests)
   add_test(NAME fms_tests COMMAND fms_tests)
+
+  # ---------------------------------------------------------------------------
+  # The capacity guard is a claim about linking, so proving it needs a second
+  # link rather than a second test case: one probe with the library's own
+  # capacities, which must link, and one with different ones, which must not.
+  # tools/abi_guard_check.sh does both and reads its paths from this file.
+  #
+  # Skipped for instrumented builds - coverage and the sanitizers add link
+  # requirements of their own, so a probe linked without them would fail for a
+  # reason that has nothing to do with capacities.
+  # ---------------------------------------------------------------------------
+  if(NOT MSVC AND NOT FMS_ENABLE_COVERAGE AND NOT FMS_ENABLE_SANITIZERS
+     AND CMAKE_CXX_COMPILER_ID MATCHES "GNU|Clang")
+    file(GENERATE OUTPUT ${CMAKE_BINARY_DIR}/abi_probe.env CONTENT
+"CXX=\"${CMAKE_CXX_COMPILER}\"
+FMS_INCLUDE=\"${CMAKE_CURRENT_SOURCE_DIR}/include\"
+ETL_INCLUDE=\"$<JOIN:$<TARGET_PROPERTY:etl::etl,INTERFACE_INCLUDE_DIRECTORIES>,;>\"
+FMS_CORE_LIB=\"$<TARGET_FILE:fms_core>\"
+FMS_CAPACITY_FLAGS=\"${fms_capacity_flags}\"
+")
+    add_test(NAME abi_guard
+      COMMAND bash ${CMAKE_CURRENT_SOURCE_DIR}/tools/abi_guard_check.sh
+              ${CMAKE_BINARY_DIR})
+    set_tests_properties(abi_guard PROPERTIES DEPENDS fms_tests)
+  endif()
 
   # The console example is exercised through a pipe, which also proves the
   # port works with redirected stdin.  The YAML paths are passed to the test

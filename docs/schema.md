@@ -204,9 +204,13 @@ truncation. Defaults from `include/fms/limits.hpp`:
 | `FMS_MAX_CHANNEL_LENGTH` | 95 | |
 | `FMS_MAX_MESSAGE_LENGTH` | 127 | |
 
-```cmake
-target_compile_definitions(fms_core PUBLIC FMS_MAX_STATES=8 FMS_MAX_TRIGGERS=12)
+```sh
+cmake -S . -B build -DFMS_MAX_STATES=8 -DFMS_MAX_TRIGGERS=12
 ```
 
 They are compile-wide on purpose: the sizes are baked into the types, so every
-translation unit must agree.
+translation unit must agree. The build carries whatever is set here to every
+target as a `PUBLIC` compile definition on `fms_core`, and a translation unit
+compiled outside the build with different values fails to link rather than
+disagreeing silently — see
+[the capacity guard](architecture.md#the-capacity-guard).
