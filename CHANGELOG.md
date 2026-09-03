@@ -6,6 +6,17 @@ numbers promise is in [docs/stability.md](docs/stability.md).
 
 ## Unreleased
 
+## [0.9.0] - 2026-09-03
+
+The version says 0.9 rather than 0.3 because what changed is the ground the
+library stands on rather than what it does: it can be installed, it says which
+version it is, it states what a version number promises, and the constraints it
+has always claimed are now read out of the built artefacts. The machine, the
+schema and the linter are unchanged.
+
+Not compatible with 0.2.x. Before 1.0 the minor is the breaking number; see
+[docs/stability.md](docs/stability.md).
+
 ### Added
 
 - `find_package(fms_yaml)`: install rules, an export set and a package config.
@@ -16,13 +27,20 @@ numbers promise is in [docs/stability.md](docs/stability.md).
   `FMS_VERSION_MAJOR`, `FMS_VERSION_MINOR`, `FMS_VERSION_PATCH`,
   `FMS_VERSION_STRING`, a comparable `FMS_VERSION`, and `fms::version()`.
 - `car_console --version`, reporting the version and the capacities.
-- `fms/abi.hpp`: the capacities are pasted into the name of a symbol every
-  `Model` and `Setup` constructor references, so a translation unit compiled
-  with different ones fails to link instead of disagreeing about
-  `sizeof(fms::Model)`.
-- Gates: `abi_guard` and `car_version` in ctest, and an `install` job that
-  builds `tests/consumer` against the installed package. `release.yml` checks
-  the tag against `project()` before publishing.
+- `fms/abi.hpp`: the capacities are pasted into the name of a symbol that the
+  constructors of `Model`, `Setup`, `Args` and `Runtime` reference, so a
+  translation unit compiled with different ones fails to link instead of
+  disagreeing about `sizeof(fms::Model)`.
+- `FMS_BUILD_CONFIG`. Off drops the YAML loader and yaml-cpp with it, which is
+  the shape a firmware build takes and what makes the tree cross-compilable.
+- [docs/stability.md](docs/stability.md): which headers are the public
+  interface, what is deliberately not covered, and what each kind of change
+  costs in version numbers.
+- This file, [CONTRIBUTING.md](CONTRIBUTING.md) and
+  [SECURITY.md](SECURITY.md).
+- Gates: `abi_guard`, `symbol_check` and `car_version` in ctest; `install` and
+  `cross` in CI. `release.yml` checks the tag against `project()` before
+  publishing, and dependabot watches the actions.
 
 ### Changed
 
@@ -30,6 +48,8 @@ numbers promise is in [docs/stability.md](docs/stability.md).
   definitions on `fms_core`, so `cmake -DFMS_MAX_STATES=8` configures the whole
   tree and reaches installed consumers. It previously set a cache variable
   nothing read.
+- MSVC builds with `/W4 /WX`, as GCC and Clang already did with `-Werror`.
+- Every target states its own exception policy rather than inheriting one.
 
 ### Fixed
 
@@ -40,6 +60,17 @@ numbers promise is in [docs/stability.md](docs/stability.md).
 - The documented ways to override a capacity were both wrong:
   `docs/architecture.md` showed a form that did nothing, `include/fms/limits.hpp`
   and `docs/schema.md` a form that caused the mismatch above.
+- `$<INSTALL_INTERFACE:include>` was hardcoded, so any layout but the default
+  gave a consumer an include directory the headers were not in.
+- `FMS_VERSION_AT` packed three fields into two digits, making 1.0.0, 0.100.0
+  and 0.99.100 the same number.
+- `tests/test_lint.cpp` failed when `2 * FMS_MAX_STATES` equalled
+  `FMS_MAX_FINDINGS` exactly.
+- `docs/architecture.md` claimed `fms_core` compiles freestanding. It does not:
+  ETL 20.39.4's `etl/limits.h` includes `<math.h>` unconditionally, and
+  libstdc++ 13 refuses `<cmath>` when `__STDC_HOSTED__` is 0. A target build
+  needs a hosted C++ library such as newlib's.
+- `src/config/yaml_loader.cpp` used `std::fopen`, which MSVC deprecates.
 
 ## [0.2.1] - 2026-09-01
 
@@ -80,5 +111,6 @@ First tagged release.
 - The heap trap (`fms_alloc_guard`) and the no-allocation proof that uses it.
 - CI, coverage, clang-tidy, cppcheck, the sanitizers, and a release workflow.
 
+[0.9.0]: https://github.com/subtilitas/fms-yaml/releases/tag/v0.9.0
 [0.2.1]: https://github.com/subtilitas/fms-yaml/releases/tag/v0.2.1
 [0.2.0]: https://github.com/subtilitas/fms-yaml/releases/tag/v0.2.0
