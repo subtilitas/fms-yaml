@@ -12,6 +12,15 @@ numbers promise is in [docs/stability.md](docs/stability.md).
 
 ### Fixed
 
+- A configuration on a source that cannot be reopened — a FIFO, a socket — was
+  parsed from its second byte. The readability check opened the path, read one
+  byte and closed it, and yaml-cpp then opened it again; a regular file starts
+  from the beginning both times, a FIFO does not. The result was a document
+  silently altered before parsing, reported as a schema error. The path is now
+  opened once and parsed from that stream, and readability is decided with
+  `peek`, which takes nothing from it.
+- A `FileNotReadable` message put the path before the reason, so a path longer
+  than `FMS_MAX_MESSAGE_LENGTH` clipped the reason away. The reason comes first.
 - A path that opened and could not be read — a directory, or a device such as
   `/proc/self/mem` — reached yaml-cpp, which leaked 2048 bytes per call:
   `YAML::Stream` allocates its prefetch buffer with a raw `new[]` in its

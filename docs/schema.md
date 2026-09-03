@@ -197,8 +197,22 @@ does a device such as `/proc/self/mem`.
 | opens, and the first read fails | `FileNotReadable`, with the reason from `errno` |
 | opens and is empty | read normally; an empty document is a schema error, not a file error |
 
-`Diagnostics::message` names the path and what the operating system said, for
-example `cannot read '/mnt/config': Is a directory`.
+`Diagnostics::message` names what the operating system said and then the path,
+for example `cannot read: Is a directory ('/mnt/config')`. The reason comes
+first because a message longer than `FMS_MAX_MESSAGE_LENGTH` is clipped from the
+right, and a long path would otherwise push the reason out of it.
+
+The path is opened once, and the parser reads from that stream. Probing with one
+open and parsing from a second costs nothing on a regular file, which starts
+from the beginning both times, and loses the first byte of a source that has no
+beginning to return to — on a FIFO the document would reach the parser from its
+second character, and be reported as a schema error nobody wrote.
+
+**Current limitation.** The open blocks as the platform blocks. A FIFO with no
+writer waits inside `load_machine_file`, which therefore does not return at all;
+it is not a status, and no timeout is applied. Configuration is expected to be a
+regular file. This is not new to the readability check — an `ifstream` on the
+same path blocks identically — and it is the caller's to avoid.
 
 ## Limits
 

@@ -27,6 +27,13 @@
 
 namespace fms::config {
 
+/// The path is opened once and parsed from that stream, so a source that cannot
+/// be reopened - a FIFO, a socket - is read whole rather than from its second
+/// byte.  **The open blocks as the platform blocks:** a FIFO with no writer
+/// waits inside the call, which therefore does not return a Status at all.
+/// Configuration is expected to be a regular file; anything else is the
+/// caller's to make ready before the call.
+
 /// Where and why a load failed.
 struct Diagnostics {
   Status  status = Status::Ok;

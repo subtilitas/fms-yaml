@@ -256,3 +256,63 @@ TEST_CASE("an empty file is empty, not unreadable") {
   CHECK(status != fms::Status::FileNotReadable);
   CHECK(status != fms::Status::FileNotFound);
 }
+
+// ---------------------------------------------------------------------------
+// A source that cannot be reopened.
+//
+// The loader used to probe readability with its own open and then hand the path
+// to yaml-cpp to open a second time.  A regular file starts from the beginning
+// both times, so it cost nothing there and was invisible to every test.  A FIFO
+// has no beginning to return to: the probe's byte was consumed and the parser
+// saw the document from its second character, which surfaced as a schema error
+// about a document nobody wrote.
+//
+// POSIX only - there is no portable FIFO - and the two opens rendezvous, which
+// is what keeps this from blocking: opening a FIFO for reading waits for a
+// writer and opening one for writing waits for a reader.
+// ---------------------------------------------------------------------------
+#if defined(__unix__) || defined(__APPLE__)
+#include <sys/stat.h>
+
+#include <cstdio>
+#include <fstream>
+#include <string>
+#include <thread>
+
+TEST_CASE("a document arriving on a pipe is parsed whole") {
+  // In the build tree: the source tree is what every other gate reads, and a
+  // test has no business leaving anything in it.
+  const std::string path = std::string(FMS_BINARY_DIR) + "/loader-fifo-test.fifo";
+  (void)std::remove(path.c_str());
+  REQUIRE(mkfifo(path.c_str(), 0600) == 0);
+
+  const char* document =
+      "triggers:\n"
+      "  - {name: go}\n"
+      "states:\n"
+      "  - name: idle\n"
+      "    transitions:\n"
+      "      go: idle\n";
+
+  // Opening for writing blocks until the loader opens for reading, so the
+  // thread and the load below meet rather than either waiting alone.
+  std::thread writer([&path, document] {
+    std::ofstream out(path, std::ios::binary);
+    out << document;
+  });
+
+  fms::Model               model;
+  fms::config::Diagnostics diagnostics;
+  const fms::Status        status =
+      fms::config::load_machine_file(path.c_str(), model, diagnostics);
+
+  writer.join();
+  (void)std::remove(path.c_str());
+
+  // The whole document, not the whole document minus its first byte.
+  CHECK(status == fms::Status::Ok);
+  CHECK(model.state_count() == 1);
+  CHECK(model.trigger_count() == 1);
+  CHECK(model.find_trigger(sv("go")) != fms::kNoTrigger);
+}
+#endif

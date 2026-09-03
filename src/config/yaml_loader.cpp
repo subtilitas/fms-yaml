@@ -11,6 +11,8 @@
 #include <cstdarg>
 #include <cstdio>
 #include <cstring>
+
+#include <fstream>
 #include <string>
 
 #include <yaml-cpp/yaml.h>
@@ -435,31 +437,12 @@ Status parse_machine(const YAML::Node& root, Model& model, Diagnostics& diagnost
 // shared plumbing for the four entry points
 // ---------------------------------------------------------------------------
 
-/// Opens a file for the readability probe below.
-///
-/// MSVC deprecates fopen in favour of fopen_s and reports C4996, which /WX
-/// turns into an error.  The alternative is _CRT_SECURE_NO_WARNINGS, and that
-/// switches off every C4996 in the translation unit - including the ones that
-/// are about something.  So the call is spelled per compiler instead.
-std::FILE* open_for_reading(const char* path) {
-#if defined(_MSC_VER)
-  std::FILE* handle = nullptr;
-  if (fopen_s(&handle, path, "rb") != 0) {
-    return nullptr;
-  }
-  return handle;
-#else
-  return std::fopen(path, "rb");
-#endif
-}
-
 /// errno as text, into storage the caller owns.
 ///
 /// std::strerror hands back a pointer to a buffer shared across the process,
 /// which clang-tidy reports as concurrency-mt-unsafe and MSVC deprecates.  Every
 /// platform has a bounded variant and no two agree on its name or its
-/// signature, so it is spelled per platform for the same reason
-/// open_for_reading above is.
+/// signature, so it is spelled per platform.
 void describe_errno(int code, char* out, std::size_t size) {
 #if defined(_MSC_VER)
   if (strerror_s(out, size, code) != 0) {
@@ -478,37 +461,48 @@ void describe_errno(int code, char* out, std::size_t size) {
 #endif
 }
 
-bool file_is_readable(const char* path, Diagnostics& diagnostics) {
-  std::FILE* probe = open_for_reading(path);
-  if (probe == nullptr) {
+/// Opens the configuration once, and answers whether it can be read.
+///
+/// Once matters.  Probing with a separate open and handing the path to
+/// YAML::LoadFile to open again costs nothing on a regular file, which starts
+/// from the beginning both times, and silently corrupts a source that has no
+/// beginning to return to: on a FIFO the probe's byte is consumed and the
+/// parser sees the document from its second character. That reads as a schema
+/// error about a document nobody wrote.
+///
+/// So the stream stays open and the parser is given it.  peek() reports whether
+/// the source can be read without taking anything from it: a directory or a
+/// device that refuses to be read fails here, and yaml-cpp is never handed a
+/// path it would open a second time.
+///
+/// Without this, a failed first read reaches YAML::Stream, whose constructor
+/// allocates a 2048-byte prefetch buffer before the read that throws.  Through
+/// yaml-cpp 0.9.0 that buffer is a raw pointer freed only in ~Stream, which
+/// does not run for an object whose constructor threw, so every such call leaks
+/// it.  Fixed upstream after 0.9.0; the check here does not depend on which
+/// version is in use.
+bool open_config(const char* path, std::ifstream& file, Diagnostics& diagnostics) {
+  file.open(path, std::ios::binary);
+  if (!file.is_open()) {
     set_message(diagnostics, Status::FileNotFound, -1, "cannot open '%s'", path);
     return false;
   }
 
-  // Opening proves nothing on its own.  A directory opens for reading on POSIX
-  // and fails on the first read, and so does a device such as /proc/self/mem.
-  // Handing such a path to yaml-cpp costs 2048 bytes every time: YAML::Stream
-  // allocates its prefetch buffer with a raw new[] in its member-initializer
-  // list, then reads through the stream buffer directly, and the std::ios_
-  // failure that libstdc++ raises from a failed read(2) escapes the
-  // constructor - so ~Stream, the only delete[], never runs.  guarded() catches
-  // the exception and reports it correctly; the memory is gone by then.  A
-  // loader that retries, waiting for removable media whose mount point is a
-  // directory, leaks it once per attempt.
-  //
-  // So the probe reads a byte.  End of file is not an error - an empty file and
-  // /dev/null are both legitimately empty - which is what ferror distinguishes.
-  (void)std::fgetc(probe);
-  const bool unreadable = std::ferror(probe) != 0;
-  const int  reason     = errno;
-  (void)std::fclose(probe);
-
-  if (unreadable) {
+  errno = 0;
+  (void)file.peek();
+  if (file.bad()) {
     char why[64];
-    describe_errno(reason, why, sizeof(why));
-    set_message(diagnostics, Status::FileNotReadable, -1, "cannot read '%s': %s", path, why);
+    describe_errno(errno, why, sizeof(why));
+    // The reason comes first: a message is clipped to FMS_MAX_MESSAGE_LENGTH
+    // from the right, and a long path would otherwise push it out entirely.
+    set_message(diagnostics, Status::FileNotReadable, -1, "cannot read: %s ('%s')", why, path);
     return false;
   }
+
+  // An empty source sets eofbit, which is not a failure - /dev/null and a
+  // zero-byte file are both legitimately empty.  Clear it so the parser starts
+  // from a stream in good standing.
+  file.clear();
   return true;
 }
 
@@ -563,11 +557,12 @@ Status load_setup_file(const char* path, Setup& setup, Diagnostics& diagnostics)
     set_message(diagnostics, Status::InvalidArgument, -1, "null path");
     return Status::InvalidArgument;
   }
-  if (!file_is_readable(path, diagnostics)) {
+  std::ifstream file;
+  if (!open_config(path, file, diagnostics)) {
     setup.clear();
     return diagnostics.status;
   }
-  return guarded(setup, diagnostics, [path] { return YAML::LoadFile(path); }, parse_setup);
+  return guarded(setup, diagnostics, [&file] { return YAML::Load(file); }, parse_setup);
 }
 
 Status load_machine_string(const char* yaml, Model& model, Diagnostics& diagnostics) noexcept {
@@ -585,11 +580,12 @@ Status load_machine_file(const char* path, Model& model, Diagnostics& diagnostic
     set_message(diagnostics, Status::InvalidArgument, -1, "null path");
     return Status::InvalidArgument;
   }
-  if (!file_is_readable(path, diagnostics)) {
+  std::ifstream file;
+  if (!open_config(path, file, diagnostics)) {
     model.clear();
     return diagnostics.status;
   }
-  return guarded(model, diagnostics, [path] { return YAML::LoadFile(path); }, parse_machine);
+  return guarded(model, diagnostics, [&file] { return YAML::Load(file); }, parse_machine);
 }
 
 }  // namespace fms::config
