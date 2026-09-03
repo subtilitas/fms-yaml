@@ -11,9 +11,13 @@
 # stray <iostream> or a call into the hosted runtime compiles fine.
 #
 # What this proves is that the two targets a firmware build would take compile
-# for a freestanding Cortex-M4 with no operating system.  It does not link an
-# image - there is no startup code, linker script or board here, and none of
-# that belongs to the library.
+# for a Cortex-M4 with no operating system.  It does not link an image - there
+# is no startup code, linker script or board here, and none of that belongs to
+# the library.
+#
+# Not strictly freestanding: ETL's etl/limits.h includes <math.h>, which
+# libstdc++ 13 refuses under -ffreestanding.  cmake/arm-none-eabi.cmake carries
+# the detail.
 #
 # fms_config is off: it is yaml-cpp, which wants a filesystem and exceptions.
 # Loading the configuration on the host and shipping the Model is the porting
@@ -39,11 +43,11 @@ arm-none-eabi-g++ --version | head -1
 # library not compiling rather than the toolchain being half installed.
 probe="$(mktemp -d)"
 trap 'rm -rf "${probe}"' EXIT
-printf '#include <cstddef>\n#include <type_traits>\nint main() { return 0; }\n' \
+printf '#include <cstddef>\n#include <type_traits>\n#include <math.h>\nint main() { return 0; }\n' \
   > "${probe}/probe.cpp"
-if ! arm-none-eabi-g++ -mcpu=cortex-m4 -mthumb -ffreestanding -fsyntax-only \
+if ! arm-none-eabi-g++ -mcpu=cortex-m4 -mthumb -fsyntax-only \
        "${probe}/probe.cpp" > "${probe}/probe.log" 2>&1; then
-  echo "cross_check: the toolchain cannot compile <cstddef> and <type_traits>:" >&2
+  echo "cross_check: the toolchain cannot compile <cstddef>, <type_traits> and <math.h>:" >&2
   head -3 "${probe}/probe.log" >&2
   echo "             apt install libnewlib-arm-none-eabi libstdc++-arm-none-eabi-newlib" >&2
   exit 1
@@ -77,4 +81,4 @@ for archive in "${build}/libfms_core.a" "${build}/libfms_inspect.a"; do
   echo "  $(basename "${archive}"): $(arm-none-eabi-size -t "${archive}" | tail -1)"
 done
 
-echo "cross_check: ok - fms_core and fms_inspect compile for cortex-m4, freestanding"
+echo "cross_check: ok - fms_core and fms_inspect compile for cortex-m4, no OS"

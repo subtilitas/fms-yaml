@@ -12,6 +12,20 @@
 # and ETL.  This is what turns that from a claim into a compile: Cortex-M4,
 # newlib-nano, no operating system, and no host headers on the include path.
 #
+# Not -ffreestanding, though it would be the obvious flag.  ETL 20.39.4's
+# etl/limits.h includes <math.h> unconditionally (line 47, reached from
+# etl/string.h through etl/binary.h), and libstdc++ 13 routes that to <cmath>,
+# which refuses to be included when __STDC_HOSTED__ is 0:
+#
+#   bits/requires_hosted.h:34: error: "This header is not available in
+#   freestanding mode."
+#
+# So the library cannot be compiled strictly freestanding as long as it uses
+# ETL's containers, whatever it includes itself.  A firmware build with
+# newlib-nano is a hosted C++ library on a target with no operating system,
+# which is what this file describes and what the claim in the porting section
+# now says.
+#
 # It compiles; it does not link an image.  There is no startup code, no linker
 # script and no board here, because none of that is the library's business - so
 # the check is CMAKE_TRY_COMPILE_TARGET_TYPE=STATIC_LIBRARY below, which stops
@@ -28,11 +42,10 @@ set(CMAKE_CXX_COMPILER arm-none-eabi-g++)
 # whole model is a few tens of kilobytes.
 set(fms_arm_flags "-mcpu=cortex-m4 -mthumb -mfloat-abi=softfp -mfpu=fpv4-sp-d16")
 
-# -ffreestanding says there is no hosted runtime; --specs=nano.specs picks
-# newlib-nano.  Neither is needed to compile fms_core - which is the point of
-# the exercise - but a target build has them, so the check has them.
-set(CMAKE_C_FLAGS_INIT   "${fms_arm_flags} -ffreestanding")
-set(CMAKE_CXX_FLAGS_INIT "${fms_arm_flags} -ffreestanding -fno-rtti")
+# -fno-rtti because nothing here needs it and a target build would not pay for
+# it.  No -ffreestanding, for the reason above.
+set(CMAKE_C_FLAGS_INIT   "${fms_arm_flags}")
+set(CMAKE_CXX_FLAGS_INIT "${fms_arm_flags} -fno-rtti")
 
 # Look for programs on the host, and for everything else only in the target
 # sysroot: a host header found by accident would make the check pass for the

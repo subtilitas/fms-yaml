@@ -53,7 +53,9 @@ in `fms_inspect` is reachable from the run phase, so a firmware build links
 `-DFMS_BUILD_CONFIG=OFF` drops the loader, and with it yaml-cpp, the filesystem
 and the one translation unit that uses exceptions. That is the shape a target
 build takes — `cmake/arm-none-eabi.cmake` and `tools/cross_check.sh` compile it
-for a freestanding Cortex-M4 on every push.
+for a Cortex-M4 with no operating system on every push. It needs a hosted C++
+library such as newlib's, because ETL includes `<math.h>`; the toolchain file
+records why.
 
 ## Installing
 
@@ -440,7 +442,7 @@ Every push runs the same gates, each answering a question the others cannot.
 | Documentation | the README's diagram regenerated and compared | `ctest` → `car_diagram_check` |
 | Capacity ABI | a probe built with a changed capacity must fail to link | `ctest` → `abi_guard` |
 | No exceptions, no allocation | read out of the built archives with `nm`, not inferred from the flags | `ctest` → `symbol_check` |
-| Bare metal | `fms_core` and `fms_inspect` compiled for a freestanding Cortex-M4 | `ci.yml` → `cross` |
+| Bare metal | `fms_core` and `fms_inspect` compiled for a Cortex-M4 with no OS | `ci.yml` → `cross` |
 | Packaging | install it, then build a consumer that knows it only through `find_package` | `ci.yml` → `install` |
 | Deep static analysis | CodeQL (`security-and-quality`) over a real build | `codeql.yml` |
 
