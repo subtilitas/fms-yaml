@@ -4,6 +4,7 @@
 #
 #   build       does it compile and pass its tests, on three toolchains
 #   coverage    how much of it did the tests actually reach
+#   install     can anyone else consume it: install, find_package, link, run
 #   clang-tidy  what is wrong with code no test happened to run
 #   cppcheck    a second opinion from a different engine
 #
@@ -191,6 +192,37 @@ jobs:
           name: coverage-html
           path: build-coverage/report
           retention-days: 30
+
+  # ---------------------------------------------------------------------------
+  # Everything above builds inside the tree, where a missing install rule, an
+  # unexported target or a dependency the package config forgets to ask for
+  # cannot show up.  find_package(fms_yaml) is the supported way to consume the
+  # library, so it gets a gate of its own: install it, then build something that
+  # knows it only through that.
+  #
+  # This is also the only job that builds with -DFMS_FETCH_DEPS=OFF, which
+  # installing requires: a dependency FetchContent built inside the build tree
+  # cannot be exported with it.  tools/install_check.sh installs ETL and
+  # yaml-cpp at the pinned versions first, so a local run is the same run.
+  install:
+    name: install
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v6
+
+      # Keyed on the script, because the dependency versions live in it.  Only
+      # the sources are cached, not the build trees: a stale build tree pointing
+      # at a prefix from an earlier run is harder to reason about than a rebuild.
+      - name: Cache the dependency sources
+        uses: actions/cache@v6
+        with:
+          path: |
+            build-install/etl-src
+            build-install/yaml-cpp-src
+          key: install-src-${{ hashFiles('tools/install_check.sh') }}
+
+      - name: Install, then build a consumer against the installed package
+        run: bash tools/install_check.sh
 
   # ---------------------------------------------------------------------------
   clang-tidy:

@@ -79,6 +79,24 @@ jobs:
           echo "tag=${tag}" >> "$GITHUB_OUTPUT"
           echo "version=${tag#v}" >> "$GITHUB_OUTPUT"
 
+      # A tag is a claim about which version this is, and project() in
+      # CMakeLists.txt makes the same claim - the version header the build
+      # generates comes from that one, so a program built from this tag reports
+      # what project() says.  The two disagreed once already; this is the check
+      # that they do not again.  A prerelease suffix is the tag's business
+      # alone, so v1.0.0-rc1 is compared as 1.0.0.
+      - name: Check the tag against the declared version
+        env:
+          VERSION: ${{ steps.version.outputs.version }}
+        run: |
+          declared="$(sed -n 's/^project(fms_yaml VERSION \([0-9.]*\).*/\1/p' CMakeLists.txt)"
+          core="${VERSION%%-*}"
+          echo "tag ${VERSION} (${core}), CMakeLists.txt ${declared}"
+          if [ "${declared}" != "${core}" ]; then
+            echo "::error::the tag says ${core}, project() says ${declared}"
+            exit 1
+          fi
+
       # The library is source-distributed: headers plus the translation units
       # that implement them, and the CMake needed to build them.  There is no
       # binary to ship - the capacities in fms/limits.hpp are compile-time, so
@@ -91,7 +109,7 @@ jobs:
         run: |
           name="fms-yaml-${{ steps.version.outputs.version }}"
           mkdir -p "dist/${name}"
-          cp -r include src tests examples docs CMakeLists.txt LICENSE README.md "dist/${name}/"
+          cp -r include src tests examples docs cmake CMakeLists.txt LICENSE README.md "dist/${name}/"
           cd dist
           tar --numeric-owner --owner=0 --group=0 --sort=name \
               -czf "${name}.tar.gz" "${name}"

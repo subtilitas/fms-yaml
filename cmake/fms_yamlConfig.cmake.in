@@ -1,0 +1,24 @@
+# SPDX-License-Identifier: MIT
+#
+# find_package(fms_yaml) lands here.  The exported targets carry the capacities
+# the library was built with as INTERFACE compile definitions, so a consumer
+# gets them without having to know they exist - which is the point, because a
+# consumer that disagreed about them would not link (fms/abi.hpp).
+@PACKAGE_INIT@
+
+include(CMakeFindDependencyMacro)
+
+# fms_core links etl::etl PUBLIC, so a consumer needs it to compile as well as
+# to link.  This is also why the install rules require -DFMS_FETCH_DEPS=OFF: a
+# dependency fetched into the build tree is not something the build can hand on.
+find_dependency(etl)
+
+if(@FMS_INSTALLED_CONFIG@)
+  # yaml-cpp is PRIVATE to fms_config, but fms_config is a static library, so it
+  # is still a link-time requirement of anything that uses the loader.
+  find_dependency(yaml-cpp)
+endif()
+
+include("${CMAKE_CURRENT_LIST_DIR}/fms_yamlTargets.cmake")
+
+check_required_components(fms_yaml)

@@ -10,6 +10,24 @@ option(FMS_BUILD_CONSOLE  "Build the std::cin/std::cout port"       ON)
 option(FMS_BUILD_INSPECT  "Build the linter and the diagram exporter"  ON)
 option(FMS_FETCH_DEPS     "Download dependencies with FetchContent" ON)
 
+# Installing exports the targets, and an exported target may only refer to
+# things that are themselves exported or found.  A dependency FetchContent
+# built inside this tree is neither, so the two are mutually exclusive and the
+# default follows FMS_FETCH_DEPS rather than surprising anyone.
+if(FMS_FETCH_DEPS)
+  set(fms_install_default OFF)
+else()
+  set(fms_install_default ON)
+endif()
+option(FMS_INSTALL "Generate install and package rules" ${fms_install_default})
+
+if(FMS_INSTALL AND FMS_FETCH_DEPS)
+  message(FATAL_ERROR
+    "FMS_INSTALL requires -DFMS_FETCH_DEPS=OFF: a dependency fetched into this "
+    "build tree cannot be exported with it.  Install ETL and yaml-cpp first, "
+    "then point CMAKE_PREFIX_PATH at them.")
+endif()
+
 # Quality-gate options.  Off by default so a plain build stays a plain build;
 # CI turns them on one at a time, because coverage counters and sanitizer
 # shadow memory measure different things and interfere when combined.
@@ -190,8 +208,17 @@ add_library(fms_core STATIC
   src/runtime.cpp)
 add_library(fms::core ALIAS fms_core)
 
+# The version is declared by project() and nowhere else; the header is written
+# from it.  A header that is generated cannot drift from the tag the release
+# workflow builds, which a hand-maintained one did once already.
+configure_file(
+  ${CMAKE_CURRENT_SOURCE_DIR}/include/fms/version.hpp.in
+  ${PROJECT_BINARY_DIR}/generated/fms/version.hpp
+  @ONLY)
+
 target_include_directories(fms_core PUBLIC
   $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/include>
+  $<BUILD_INTERFACE:${PROJECT_BINARY_DIR}/generated>
   $<INSTALL_INTERFACE:include>)
 
 # ETL_LOG_ERRORS must be visible to every TU that includes an ETL header,
@@ -416,6 +443,14 @@ FMS_CAPACITY_FLAGS=\"${fms_capacity_flags}\"
     # Loading the shipped configuration is itself a test, run by the binary.
     # --check also lints what it loaded, so this fails on a machine that is
     # valid and still cannot mean what it says.
+      # The version the binary reports comes from the header CMake generated from
+    # project(), so this is the check that a release tag, the CMake project and
+    # the running program are still the same number.
+    string(REPLACE "." "\\." fms_version_pattern "${PROJECT_VERSION}")
+    add_test(NAME car_version COMMAND car_console --version)
+    set_tests_properties(car_version PROPERTIES PASS_REGULAR_EXPRESSION
+      "fms-yaml ${fms_version_pattern} \\(capacities [0-9_]+\\)")
+
     add_test(NAME car_config_check
       COMMAND car_console
               ${CMAKE_CURRENT_SOURCE_DIR}/examples/car/car.setup.yaml
@@ -442,4 +477,97 @@ FMS_CAPACITY_FLAGS=\"${fms_capacity_flags}\"
       endif()
     endif()
   endif()
+endif()
+
+# ---------------------------------------------------------------------------
+# Install and package
+#
+# The library is source-distributed, but a consumer still needs a way to say
+# "use it" that is not add_subdirectory: install here, then
+#
+#   find_package(fms_yaml REQUIRED)
+#   target_link_libraries(app PRIVATE fms::core fms::config)
+#
+# The exported targets carry the capacities this tree was configured with as
+# INTERFACE compile definitions, so a consumer inherits them and cannot end up
+# in the mismatch fms/abi.hpp exists to catch.
+#
+# Which targets exist depends on the options, so the export set is built up
+# rather than written out: a package that promised fms::console when
+# FMS_BUILD_CONSOLE was off would fail at the consumer's configure step.
+# ---------------------------------------------------------------------------
+if(FMS_INSTALL)
+  include(GNUInstallDirs)
+  include(CMakePackageConfigHelpers)
+
+  set(fms_install_targets fms_core fms_config fms_alloc_guard)
+  if(FMS_BUILD_CONSOLE)
+    list(APPEND fms_install_targets fms_console)
+  endif()
+  if(FMS_BUILD_INSPECT)
+    list(APPEND fms_install_targets fms_inspect)
+  endif()
+
+  # NAMESPACE alone would export fms_core as fms::fms_core.  EXPORT_NAME makes
+  # the installed names the same as the ALIAS targets this tree defines, so the
+  # target_link_libraries line in a consumer is the same either way.
+  foreach(target IN LISTS fms_install_targets)
+    string(REPLACE "fms_" "" export_name "${target}")
+    set_target_properties(${target} PROPERTIES EXPORT_NAME ${export_name})
+  endforeach()
+
+  install(TARGETS ${fms_install_targets}
+    EXPORT fms_yamlTargets
+    ARCHIVE  DESTINATION ${CMAKE_INSTALL_LIBDIR}
+    LIBRARY  DESTINATION ${CMAKE_INSTALL_LIBDIR}
+    INCLUDES DESTINATION ${CMAKE_INSTALL_INCLUDEDIR})
+
+  # A header whose target was not built is a promise the package cannot keep,
+  # so the optional ones follow their targets.  memory_port.hpp is not among
+  # them: it is header-only and belongs to the core.
+  set(fms_header_excludes)
+  if(NOT FMS_BUILD_CONSOLE)
+    list(APPEND fms_header_excludes PATTERN "console_port.hpp" EXCLUDE)
+  endif()
+  if(NOT FMS_BUILD_INSPECT)
+    list(APPEND fms_header_excludes PATTERN "inspect" EXCLUDE)
+  endif()
+
+  # version.hpp.in is the template for a header generated into the build tree;
+  # shipping it too would put two spellings of the version in one directory.
+  install(DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}/include/fms
+    DESTINATION ${CMAKE_INSTALL_INCLUDEDIR}
+    FILES_MATCHING PATTERN "*.hpp" ${fms_header_excludes})
+  install(FILES ${PROJECT_BINARY_DIR}/generated/fms/version.hpp
+    DESTINATION ${CMAKE_INSTALL_INCLUDEDIR}/fms)
+
+  install(EXPORT fms_yamlTargets
+    FILE      fms_yamlTargets.cmake
+    NAMESPACE fms::
+    DESTINATION ${CMAKE_INSTALL_LIBDIR}/cmake/fms_yaml)
+
+  # The config file asks for yaml-cpp only when fms_config is part of the
+  # package, which it always is - kept as a variable so the question is asked
+  # in one place if that ever stops being true.
+  set(FMS_INSTALLED_CONFIG TRUE)
+  configure_package_config_file(
+    ${CMAKE_CURRENT_SOURCE_DIR}/cmake/fms_yamlConfig.cmake.in
+    ${PROJECT_BINARY_DIR}/fms_yamlConfig.cmake
+    INSTALL_DESTINATION ${CMAKE_INSTALL_LIBDIR}/cmake/fms_yaml)
+
+  # SameMinorVersion, not SameMajorVersion: at 0.x the minor is the breaking
+  # number, so 0.2 and 0.3 are not interchangeable.  This becomes
+  # SameMajorVersion at 1.0, when the major starts carrying that meaning.
+  write_basic_package_version_file(
+    ${PROJECT_BINARY_DIR}/fms_yamlConfigVersion.cmake
+    VERSION       ${PROJECT_VERSION}
+    COMPATIBILITY SameMinorVersion)
+
+  install(FILES
+    ${PROJECT_BINARY_DIR}/fms_yamlConfig.cmake
+    ${PROJECT_BINARY_DIR}/fms_yamlConfigVersion.cmake
+    DESTINATION ${CMAKE_INSTALL_LIBDIR}/cmake/fms_yaml)
+
+  install(FILES ${CMAKE_CURRENT_SOURCE_DIR}/LICENSE
+    DESTINATION ${CMAKE_INSTALL_DATAROOTDIR}/licenses/fms_yaml)
 endif()
