@@ -23,6 +23,8 @@ PAGES: dict[str, str] = {
     "README.md": "Home",
     "docs/architecture.md": "Architecture",
     "docs/schema.md": "Schema",
+    "docs/stability.md": "Stability",
+    "CHANGELOG.md": "Changelog",
 }
 
 BANNER = (
@@ -31,28 +33,46 @@ BANNER = (
 )
 
 
+# Any number of leading ./ or ../ segments.  A page under docs/ reaches the
+# README as ../README.md and its neighbour as schema.md, and both have to be
+# recognised or the wiki gets a link to a file that is not there.
+RELATIVE_PREFIX = r"(?:\.{1,2}/)*"
+
+
+def spellings(repo_path: str) -> str:
+    """How one Markdown file may refer to another: by repository path, or - for
+    two files in the same directory - by file name alone."""
+    names = {repo_path, pathlib.PurePosixPath(repo_path).name}
+    longest_first = sorted(names, key=len, reverse=True)
+    return "(?:" + "|".join(re.escape(name) for name in longest_first) + ")"
+
+
 def rewrite_links(text: str) -> str:
     """Point in-repository Markdown links at the corresponding wiki pages."""
     for repo_path, page in PAGES.items():
         if repo_path == "README.md":
             continue
-        escaped = re.escape(repo_path)
+        path = RELATIVE_PREFIX + spellings(repo_path)
         # A link whose text is the path reads badly once the path is gone:
         # [docs/schema.md](Schema) -> [Schema](Schema).
         text = re.sub(
-            r"\[\.?/?" + escaped + r"\]\(\.?/?" + escaped + r"(#[^)]*)?\)",
+            r"\[" + path + r"\]\(" + path + r"(#[^)]*)?\)",
             lambda m, p=page: f"[{p}]({p}{m.group(1) or ''})",
             text,
         )
-        # (docs/schema.md)  ->  (Schema)      (docs/schema.md#guards) -> (Schema#guards)
+        # (docs/schema.md)  ->  (Schema)      (schema.md#guards) -> (Schema#guards)
         text = re.sub(
-            r"\(\.?/?" + escaped + r"(#[^)]*)?\)",
+            r"\(" + path + r"(#[^)]*)?\)",
             lambda m, p=page: f"({p}{m.group(1) or ''})",
             text,
         )
 
     # A link back to the README is a link to Home.
-    return re.sub(r"\(\.?/?README\.md(#[^)]*)?\)", lambda m: f"(Home{m.group(1) or ''})", text)
+    return re.sub(
+        r"\(" + RELATIVE_PREFIX + r"README\.md(#[^)]*)?\)",
+        lambda m: f"(Home{m.group(1) or ''})",
+        text,
+    )
 
 
 def sidebar() -> str:

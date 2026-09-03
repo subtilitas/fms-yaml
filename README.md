@@ -39,6 +39,11 @@ ctest --test-dir build --output-on-failure
 Dependencies: ETL 20.39.4, yaml-cpp 0.8.0, and doctest 2.4.11 for the tests.
 Fetched automatically; `-DFMS_FETCH_DEPS=OFF` uses installed copies.
 
+What a version number promises — which headers are the public interface, what
+is deliberately not covered, and which toolchains move only with a breaking
+version — is in [docs/stability.md](docs/stability.md). Changes per release are
+in [CHANGELOG.md](CHANGELOG.md).
+
 Targets: `fms_core` (the machine, no transport), `fms_config` (the YAML
 loader), `fms_console` (the `<iostream>` port, optional), `fms_inspect` (linter
 and diagram exporter, optional), `fms_alloc_guard` (optional). Nothing in
@@ -491,7 +496,7 @@ tests/                doctest suites, the no-allocation proof, and a scripted co
 tests/consumer/       a project that knows the library only through find_package
 tools/                the scripts the quality gates run
 cmake/                the package config template find_package(fms_yaml) lands in
-docs/                 schema.md, architecture.md
+docs/                 schema.md, architecture.md, stability.md
 ```
 
 ---
