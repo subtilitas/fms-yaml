@@ -56,7 +56,11 @@ done
 # --- 1. the tag covers every capacity ---------------------------------------
 declared="$(grep -oE '^#define +FMS_MAX_[A-Z_]+' "${root}/include/fms/limits.hpp" \
             | awk '{print $2}' | sort -u)"
-tagged="$(grep -oE 'FMS_MAX_[A-Z_]+' "${root}/include/fms/abi.hpp" | sort -u)"
+# Only the lines that build the tag count.  A capacity named in a comment and
+# nowhere else is exactly the hole this check is for, so reading the whole file
+# would let it through.
+tagged="$(grep -E '^#define +FMS_ABI_ID' "${root}/include/fms/abi.hpp" \
+          | grep -oE 'FMS_MAX_[A-Z_]+' | sort -u)"
 untagged="$(comm -23 <(echo "${declared}") <(echo "${tagged}"))"
 if [ -n "${untagged}" ]; then
   echo "abi_guard: capacity in limits.hpp but not in the abi tag:" >&2

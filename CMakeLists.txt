@@ -234,7 +234,7 @@ set(FMS_CAPACITIES
 
 foreach(capacity IN LISTS FMS_CAPACITIES)
   if(DEFINED ${capacity})
-    if(NOT "${${capacity}}" MATCHES "^[0-9]+$")
+    if(NOT "${${capacity}}" MATCHES "^[1-9][0-9]*$")
       message(FATAL_ERROR "${capacity} must be a positive integer, got '${${capacity}}'")
     endif()
     target_compile_definitions(fms_core PUBLIC ${capacity}=${${capacity}})
