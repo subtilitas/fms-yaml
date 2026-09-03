@@ -3,7 +3,7 @@
 // Car state machine on the console.
 //
 //   ./car_console [setup.yaml] [machine.yaml] [--quiet] [--check] [--lint]
-//                 [--export mermaid|dot]
+//                 [--export mermaid|dot] [--version]
 //
 // The YAML is read here, when the program runs, and nowhere else: the build does
 // not copy it, parse it or depend on it.  So the paths are yours to choose -
@@ -35,8 +35,10 @@
 #include <cstdio>
 #include <cstring>
 
+#include "fms/abi.hpp"
 #include "fms/port/console_port.hpp"
 #include "fms/runtime.hpp"
+#include "fms/version.hpp"
 #include "fms/yaml_loader.hpp"
 
 #if defined(FMS_WITH_INSPECT)
@@ -149,6 +151,12 @@ int main(int argc, char** argv) {
 #endif
 
   for (int i = 1; i < argc; ++i) {
+    if (std::strcmp(argv[i], "--version") == 0) {
+      // The capacities go with the version because they are half of what
+      // decides whether two builds are the same build.
+      (void)std::printf("fms-yaml %s (capacities %s)\n", fms::version(), fms::abi::tag());
+      return 0;
+    }
     if (std::strcmp(argv[i], "--quiet") == 0) {
       quiet = true;
     } else if (std::strcmp(argv[i], "--check") == 0) {

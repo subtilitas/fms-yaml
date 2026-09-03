@@ -354,6 +354,8 @@ about linking, and one toolchain proving it is enough.
 | `car_config_check` (ctest) | the shipped configuration loaded *and linted* by the real binary |
 | `car_diagram_check` (ctest) | the README's diagram regenerated from the machine file and compared |
 | `abi_guard` (ctest) | a probe compiled with a changed capacity fails to link, and one with the library's own capacities does not |
+| `car_version` (ctest) | the binary reports the version `project()` declared |
+| `install` (CI) | the installed package resolves through `find_package`, and `tests/consumer` links and runs against it |
 
 ## Threading
 
