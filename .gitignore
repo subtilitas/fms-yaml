@@ -28,6 +28,12 @@ cppcheck.xml
 # Scratch: things moved aside rather than deleted outright
 _to_delete/
 
+# Reports from testing kept outside this repository, and drafts of issues filed
+# elsewhere.  They are working notes about the tree, not part of it, and the
+# tree should not carry a copy that drifts from the suite that produced it.
+FINDINGS_*.md
+UPSTREAM_ISSUE_*.md
+
 # Python bytecode from tools/, and ruff's cache
 __pycache__/
 *.pyc
