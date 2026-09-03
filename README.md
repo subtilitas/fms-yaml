@@ -23,6 +23,7 @@ decision.
 | Built on ETL | `etl::flat_map`, `etl::vector`, `etl::string` throughout |
 | States and triggers stored with their dependencies in a flat map | `flat_map<StateId, StateNode>`, and inside each node `flat_map<TriggerId, Alternatives>` |
 | No dynamic allocation after setup | fixed capacities from `fms/limits.hpp`; `tests/test_no_alloc.cpp` replaces global `operator new` and traps it |
+| One capacity configuration per program | `cmake -DFMS_MAX_STATES=8` reaches every target; a translation unit that disagrees fails to link (`fms/abi.hpp`) |
 | No exceptions | compiled `-fno-exceptions`; the one TU that talks to yaml-cpp is the firewall and returns `Status` |
 | Interface left open | `fms::IPort` is eight virtual methods; the shipped implementations are a console port and an in-memory test port |
 | Config is a run-time input | the build never opens the YAML; `--check` validates a config by running the binary |
@@ -381,6 +382,7 @@ Every push runs the same gates, each answering a question the others cannot.
 | Runtime analysis | ASan + UBSan over the test suite | `sanitizers.yml` |
 | Configuration | the shipped YAML loaded and linted by the real binary | `ctest` → `car_config_check` |
 | Documentation | the README's diagram regenerated and compared | `ctest` → `car_diagram_check` |
+| Capacity ABI | a probe built with a changed capacity must fail to link | `ctest` → `abi_guard` |
 | Deep static analysis | CodeQL (`security-and-quality`) over a real build | `codeql.yml` |
 
 Both analysers run through `tools/analyze.sh`, so the flags exist once and a
@@ -424,6 +426,7 @@ identical in both. CI's GCC is the reference.
 ```
 include/fms/
   limits.hpp          compile-time capacities (override with -DFMS_MAX_STATES=…)
+  abi.hpp             makes a capacity mismatch a link error, not a corrupt Model
   model.hpp           the machine: triggers, states and guarded alternatives
   args.hpp            key=value arguments, as views over the port's buffer
   condition.hpp       one guard: arg, operator, literal

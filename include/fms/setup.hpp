@@ -11,6 +11,7 @@
 #ifndef FMS_SETUP_HPP
 #define FMS_SETUP_HPP
 
+#include "fms/abi.hpp"
 #include "fms/io_config.hpp"
 #include "fms/model.hpp"
 #include "fms/status.hpp"
@@ -20,7 +21,9 @@ namespace fms {
 
 class Setup {
  public:
-  Setup() noexcept = default;
+  /// See Model's constructor and fms/abi.hpp: the body is the link-time
+  /// capacity guard, not an oversight.
+  Setup() noexcept { abi::pin(); }
 
   Setup(const Setup&) = delete;
   Setup& operator=(const Setup&) = delete;

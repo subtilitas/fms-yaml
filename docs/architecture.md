@@ -292,6 +292,49 @@ nm -C libfms_core.a | grep -E ' U (operator new|malloc)'         # empty
 nm -C libfms_config.a | grep -cE '__cxa_throw|_Unwind_Resume'    # non-zero: the firewall
 ```
 
+## The capacity guard
+
+The capacities are template arguments of the containers inside `Model`, `Setup`,
+`Args`, `Runtime` and `lint::Report`, so they decide the layout of those types.
+Two translation units that disagree about one see different types under the same
+names, and the link succeeds:
+
+```
+sizeof(fms::Model)   49 728 B   defaults
+sizeof(fms::Model)   21 120 B   FMS_MAX_STATES=8 FMS_MAX_TRIGGERS=12
+```
+
+The library then writes 49 728 bytes into an object the caller reserved 21 120
+for. Nothing in the type system, the compiler or the linker objects.
+
+Two things prevent it. Inside the build, a capacity is a cache variable that
+becomes a `PUBLIC` compile definition on `fms_core`, so `cmake -DFMS_MAX_STATES=8`
+reaches every target that links it — the same treatment `ETL_LOG_ERRORS` gets,
+for the same reason. Outside the build, `fms/abi.hpp` pastes all eleven
+capacities into the name of a symbol that `fms_core` defines once and the
+constructors of `Model` and `Setup` reference:
+
+```
+undefined reference to `fms_abi_8_12_8_4_3_64_4_31_95_127_32'
+```
+
+The name of the missing symbol is the configuration the caller compiled with,
+and the one `fms_core` defines is the configuration it was built with.
+
+The guard fires when a `Model` or a `Setup` is constructed, which every program
+using the library does. A translation unit that only declares a reference or a
+pointer to one constructs nothing and is not covered, and neither is a mismatch
+in `FMS_MAX_FINDINGS` alone in a program that lints without loading — the
+constructor is the hook, so something has to be constructed.
+
+`tools/abi_guard_check.sh` is the gate, run by the `abi_guard` test. It checks
+that every `FMS_MAX_*` in `limits.hpp` appears in the tag, that a probe built
+with the library's own capacities links and runs, and that one built with a
+changed capacity does not link and says which symbol it could not resolve. The
+changed capacity is derived from what the probe reports, so the gate holds for a
+tuned tree as well as for the defaults. GCC and Clang only: it is a statement
+about linking, and one toolchain proving it is enough.
+
 ## Testing
 
 | Suite | Covers |
@@ -306,9 +349,11 @@ nm -C libfms_config.a | grep -cE '__cxa_throw|_Unwind_Resume'    # non-zero: the
 | `test_no_alloc.cpp` | the heap trap |
 | `test_lint.cpp` | every check, on machines that load without complaint, plus a full report |
 | `test_diagram.cpp` | both formats, guard labels, the fallback label, escaping |
+| `test_abi.cpp` | the capacity tag lists every capacity, in the order the symbol name pastes them |
 | `car_console_pipe` (ctest) | the example driven by a scripted session on stdin, stdout compared with `tests/car_session.expected` |
 | `car_config_check` (ctest) | the shipped configuration loaded *and linted* by the real binary |
 | `car_diagram_check` (ctest) | the README's diagram regenerated from the machine file and compared |
+| `abi_guard` (ctest) | a probe compiled with a changed capacity fails to link, and one with the library's own capacities does not |
 
 ## Threading
 

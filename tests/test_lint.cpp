@@ -409,11 +409,22 @@ TEST_CASE("a full report says so rather than pretending it looked at everything"
   fms::TriggerId trigger = fms::kNoTrigger;
   REQUIRE(model.declare_trigger(sv("unused"), fms::StringView{}, trigger) == fms::Status::Ok);
 
-  // Every state is a dead end, and every state but the first is unreachable.
+  // Every state is a dead end, every state but the first is unreachable, and
+  // the trigger is unused: two findings per state.
+  const std::size_t findings = 2 * fms::limits::kMaxStates;
+
   fms::lint::Report report;
-  CHECK(fms::lint::analyse(model, 0, report) == fms::Status::CapacityExceeded);
-  CHECK(report.size() == fms::limits::kMaxFindings);
-  CHECK(report.full());
+  if (findings > fms::limits::kMaxFindings) {
+    CHECK(fms::lint::analyse(model, 0, report) == fms::Status::CapacityExceeded);
+    CHECK(report.size() == fms::limits::kMaxFindings);
+    CHECK(report.full());
+  } else {
+    // A tree configured with few states and a large report cannot overflow one;
+    // there the contract is that nothing was dropped.
+    CHECK(fms::lint::analyse(model, 0, report) == fms::Status::Ok);
+    CHECK(report.size() == findings);
+    CHECK_FALSE(report.full());
+  }
 }
 
 TEST_CASE("every check has a slug and a severity") {

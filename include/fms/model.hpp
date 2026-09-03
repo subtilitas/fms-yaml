@@ -28,6 +28,7 @@
 #include <etl/flat_map.h>
 #include <etl/vector.h>
 
+#include "fms/abi.hpp"
 #include "fms/args.hpp"
 #include "fms/condition.hpp"
 #include "fms/limits.hpp"
@@ -79,7 +80,10 @@ class Model {
   using ChannelIndex = etl::flat_map<Channel, TriggerId, limits::kMaxTriggers>;
   using ConditionPool = etl::vector<Condition, limits::kMaxConditions>;
 
-  Model() noexcept = default;
+  /// Not defaulted: the body pins the capacity configuration this translation
+  /// unit compiled with, so a caller that disagrees with fms_core about
+  /// sizeof(Model) fails to link.  See fms/abi.hpp.
+  Model() noexcept { abi::pin(); }
 
   Model(const Model&) = delete;
   Model& operator=(const Model&) = delete;
