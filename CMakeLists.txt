@@ -71,7 +71,12 @@ endfunction()
 
 function(fms_warnings target)
   if(MSVC)
-    target_compile_options(${target} PRIVATE /W4)
+    # /external:anglebrackets puts everything included with <> outside the
+    # warning level, and /external:W0 silences it.  Without them /W4 reports on
+    # the standard library, ETL, yaml-cpp and doctest as though we had written
+    # them - the same observation the -isystem treatment makes on GCC and Clang,
+    # which MSVC does not take from CMake's SYSTEM include dirs alone.
+    target_compile_options(${target} PRIVATE /W4 /external:anglebrackets /external:W0)
     if(FMS_WARNINGS_AS_ERRORS)
       target_compile_options(${target} PRIVATE /WX)
     endif()
