@@ -434,8 +434,26 @@ Status parse_machine(const YAML::Node& root, Model& model, Diagnostics& diagnost
 // shared plumbing for the four entry points
 // ---------------------------------------------------------------------------
 
+/// Opens a file for the readability probe below.
+///
+/// MSVC deprecates fopen in favour of fopen_s and reports C4996, which /WX
+/// turns into an error.  The alternative is _CRT_SECURE_NO_WARNINGS, and that
+/// switches off every C4996 in the translation unit - including the ones that
+/// are about something.  So the call is spelled per compiler instead.
+std::FILE* open_for_reading(const char* path) {
+#if defined(_MSC_VER)
+  std::FILE* handle = nullptr;
+  if (fopen_s(&handle, path, "rb") != 0) {
+    return nullptr;
+  }
+  return handle;
+#else
+  return std::fopen(path, "rb");
+#endif
+}
+
 bool file_is_readable(const char* path, Diagnostics& diagnostics) {
-  std::FILE* probe = std::fopen(path, "rb");
+  std::FILE* probe = open_for_reading(path);
   if (probe == nullptr) {
     set_message(diagnostics, Status::FileNotFound, -1, "cannot open '%s'", path);
     return false;
