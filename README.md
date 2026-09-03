@@ -42,7 +42,9 @@ Fetched automatically; `-DFMS_FETCH_DEPS=OFF` uses installed copies.
 What a version number promises — which headers are the public interface, what
 is deliberately not covered, and which toolchains move only with a breaking
 version — is in [docs/stability.md](docs/stability.md). Changes per release are
-in [CHANGELOG.md](CHANGELOG.md).
+in [CHANGELOG.md](CHANGELOG.md), how to work on it in
+[CONTRIBUTING.md](CONTRIBUTING.md), and what counts as a vulnerability in
+[SECURITY.md](SECURITY.md).
 
 Targets: `fms_core` (the machine, no transport), `fms_config` (the YAML loader,
 optional), `fms_console` (the `<iostream>` port, optional), `fms_inspect`
