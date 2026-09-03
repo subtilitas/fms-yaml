@@ -73,7 +73,7 @@ jobs:
             werror: 'ON'
 
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@v7
 
       - name: Cache fetched dependencies
         uses: actions/cache@v6
@@ -114,9 +114,9 @@ jobs:
     name: coverage
     runs-on: ubuntu-24.04
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@v7
 
-      - uses: actions/setup-python@v6
+      - uses: actions/setup-python@v7
         with:
           python-version: '3.12'
 
@@ -172,7 +172,7 @@ jobs:
       # writes for the report above, so nothing is measured twice.  No token -
       # a public repository uploads to Codecov from Actions without one.
       - name: Upload to Codecov
-        uses: codecov/codecov-action@v5
+        uses: codecov/codecov-action@v7
         with:
           files: build-coverage/cobertura.xml
           # Naming a file is not enough: the action still searches the
@@ -209,7 +209,7 @@ jobs:
     name: install
     runs-on: ubuntu-24.04
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@v7
 
       # Keyed on the script, because the dependency versions live in it.  Only
       # the sources are cached, not the build trees: a stale build tree pointing
@@ -238,7 +238,7 @@ jobs:
     name: cross (arm-none-eabi)
     runs-on: ubuntu-24.04
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@v7
 
       # gcc-arm-none-eabi is the compiler and nothing else on Ubuntu: the C
       # library and the C++ headers are separate packages, and without them
@@ -266,7 +266,7 @@ jobs:
     name: clang-tidy
     runs-on: ubuntu-24.04
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@v7
 
       # clang-tools-18 is what provides run-clang-tidy-18; the clang-tidy-18
       # package alone gives only the single-file driver.
@@ -310,7 +310,7 @@ jobs:
     name: cppcheck
     runs-on: ubuntu-24.04
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@v7
 
       - name: Install cppcheck
         run: |

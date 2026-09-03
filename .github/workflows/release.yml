@@ -43,7 +43,7 @@ jobs:
           - {name: linux-clang,  os: ubuntu-24.04,  cc: clang-18, cxx: clang++-18}
           - {name: windows-msvc, os: windows-2022}
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@v7
         with:
           ref: ${{ inputs.tag || github.ref }}
 
@@ -67,7 +67,7 @@ jobs:
     permissions:
       contents: write
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@v7
         with:
           ref: ${{ inputs.tag || github.ref }}
           fetch-depth: 0    # release notes are generated from the commit range
