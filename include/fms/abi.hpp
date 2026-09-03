@@ -10,9 +10,9 @@
 // allocated 21120 for.
 //
 // So the capacities are pasted into the name of a symbol that fms_core defines
-// once and every Model, Setup and Report constructor references.  A mismatch is
-// an undefined reference naming both configurations, at link time, rather than
-// a corrupted object at run time.
+// once and the constructors of Model and Setup reference.  A mismatch is an
+// undefined reference naming both configurations, at link time, rather than a
+// corrupted object at run time.
 //
 // The capacities are set from the build system and reach every target through
 // fms_core, which carries them as PUBLIC compile definitions:
