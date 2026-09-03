@@ -1,10 +1,11 @@
 # SPDX-License-Identifier: MIT
 #
-# The build gate.  Five jobs, each answering a different question:
+# The build gate.  Six jobs, each answering a different question:
 #
 #   build       does it compile and pass its tests, on three toolchains
 #   coverage    how much of it did the tests actually reach
 #   install     can anyone else consume it: install, find_package, link, run
+#   cross       does the part meant for a target compile for one
 #   clang-tidy  what is wrong with code no test happened to run
 #   cppcheck    a second opinion from a different engine
 #
@@ -223,6 +224,42 @@ jobs:
 
       - name: Install, then build a consumer against the installed package
         run: bash tools/install_check.sh
+
+  # ---------------------------------------------------------------------------
+  # Every other job builds for the host, where a stray <iostream> or a call into
+  # the hosted runtime compiles without complaint.  docs/architecture.md says
+  # fms_core needs only <cstdint>, <cstddef>, <cstring> and ETL, and that a
+  # firmware build links it and stops there; this is the job that makes that a
+  # compile rather than a claim.
+  #
+  # Compile only.  There is no startup code, linker script or board here, and
+  # none of that belongs to the library.
+  cross:
+    name: cross (arm-none-eabi)
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v6
+
+      # gcc-arm-none-eabi is the compiler and nothing else on Ubuntu: the C
+      # library and the C++ headers are separate packages, and without them
+      # every translation unit fails on <cstddef>.
+      - name: Install the ARM toolchain
+        run: |
+          sudo apt-get update
+          sudo apt-get install --no-install-recommends -y \
+            gcc-arm-none-eabi \
+            libnewlib-arm-none-eabi \
+            libstdc++-arm-none-eabi-newlib
+
+      - name: Cache fetched dependencies
+        uses: actions/cache@v6
+        with:
+          path: ${{ env.FETCHCONTENT_BASE_DIR }}
+          key: deps-cross-${{ hashFiles('CMakeLists.txt') }}
+          restore-keys: deps-cross-
+
+      - name: Compile fms_core and fms_inspect for a Cortex-M4
+        run: bash tools/cross_check.sh
 
   # ---------------------------------------------------------------------------
   clang-tidy:
