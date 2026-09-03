@@ -24,6 +24,8 @@ PAGES: dict[str, str] = {
     "docs/architecture.md": "Architecture",
     "docs/schema.md": "Schema",
     "docs/stability.md": "Stability",
+    "CONTRIBUTING.md": "Contributing",
+    "SECURITY.md": "Security",
     "CHANGELOG.md": "Changelog",
 }
 

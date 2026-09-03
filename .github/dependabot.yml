@@ -1,0 +1,23 @@
+# SPDX-License-Identifier: MIT
+#
+# The actions used by the workflows, and nothing else.
+#
+# The C++ dependencies are pinned in CMakeLists.txt as FetchContent GIT_TAGs and
+# in tools/install_check.sh as versions; dependabot does not read either, so
+# ETL, yaml-cpp and doctest are bumped by hand.  Same for the tool versions
+# pinned in lint.yml and ci.yml - gcovr, ruff, shellcheck, actionlint - which
+# are pinned precisely so they do not move on someone else's schedule.
+version: 2
+
+updates:
+  - package-ecosystem: github-actions
+    directory: /
+    schedule:
+      interval: monthly
+    commit-message:
+      prefix: 'ci'
+    groups:
+      # One pull request rather than four: these move together and each one
+      # costs a full CI run.
+      actions:
+        patterns: ['*']

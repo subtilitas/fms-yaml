@@ -19,6 +19,8 @@ on:
     paths:
       - 'README.md'
       - 'CHANGELOG.md'
+      - 'CONTRIBUTING.md'
+      - 'SECURITY.md'
       - 'docs/**'
       - 'tools/wiki_sync.py'
       - '.github/workflows/docs.yml'
