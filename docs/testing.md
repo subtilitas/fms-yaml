@@ -200,7 +200,8 @@ business alone, so `v1.0.0-rc2` is compared as `1.0.0`.
   no emulator.
 - A yaml-cpp or doctest version other than the pinned 0.8.0 and 2.4.11. A newer
   one may work and is not tested. ETL is the exception: the `etl-range` job
-  builds and tests against eight versions, listed below.
+  builds and tests against the eight versions listed under
+  [ETL versions](#etl-versions) above.
 - Concurrent use. The library is single threaded by design, which
   [architecture.md](architecture.md#threading) states; no test drives one
   `Runtime` from two threads, because doing so is outside what the design
