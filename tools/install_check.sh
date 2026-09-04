@@ -264,12 +264,13 @@ if [ "${major}" -gt 0 ] && [ "${minor}" -eq 0 ]; then
   rm -rf "${relabelled}"
   cp -a "${prefix}" "${relabelled}"
 
-  version_file="$(find "${relabelled}" -name fms_yamlConfigVersion.cmake)"
-  if [ ! -f "${version_file}" ]; then
-    echo "install_check: no fms_yamlConfigVersion.cmake under ${prefix}." >&2
+  mapfile -t version_files < <(find "${relabelled}" -name fms_yamlConfigVersion.cmake)
+  if [ "${#version_files[@]}" -ne 1 ]; then
+    echo "install_check: expected one fms_yamlConfigVersion.cmake under" >&2
+    echo "               ${relabelled}, found ${#version_files[@]}." >&2
     exit 1
   fi
-  sed -i "s/${major}\.${minor}\.${patch}/${major}.1.0/g" "${version_file}"
+  sed -i "s/${major}\.${minor}\.${patch}/${major}.1.0/g" "${version_files[0]}"
 
   echo "install_check: the same file relabelled ${major}.1.0, where the rules differ"
   probe_prefix="${relabelled}" probe_version="${major}.1.0" \
