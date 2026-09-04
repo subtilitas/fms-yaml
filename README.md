@@ -431,6 +431,8 @@ kilobytes.
 ## Quality gates
 
 Every push runs the same gates, each answering a question the others cannot.
+What they add up to, and what is not covered, is in
+[docs/testing.md](docs/testing.md).
 
 | Gate | Tool | Where |
 |---|---|---|
@@ -512,7 +514,7 @@ tests/                doctest suites, the no-allocation proof, and a scripted co
 tests/consumer/       a project that knows the library only through find_package
 tools/                the scripts the quality gates run
 cmake/                the package config template, and an arm-none-eabi toolchain file
-docs/                 schema.md, architecture.md, stability.md
+docs/                 schema.md, architecture.md, stability.md, testing.md
 ```
 
 ---
