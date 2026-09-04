@@ -98,7 +98,7 @@ gates the build.
 
 ```
 $ ./build/car_console --version
-fms-yaml 0.9.0 (capacities 32_32_8_4_3_64_4_31_95_127_32)
+fms-yaml 0.10.0 (capacities 32_32_8_4_3_64_4_31_95_127_32)
 ```
 
 The version comes from `fms/version.hpp`, which CMake generates from

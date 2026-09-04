@@ -6,6 +6,14 @@ numbers promise is in [docs/stability.md](docs/stability.md).
 
 ## Unreleased
 
+## [0.10.0] - 2026-09-04
+
+Not compatible with 0.9.x. `Status::FileNotReadable` is a status a call could
+not previously return: a path that opens and whose first read fails — a
+directory, a device that refuses to be read — answered `ParseError` in 0.9.0 and
+answers this instead. Before 1.0 the minor is the breaking number; see
+[docs/stability.md](docs/stability.md).
+
 ### Added
 
 - `tools/capacity_sweep.sh` and the `capacities` CI job: the suite is built and
@@ -146,6 +154,7 @@ First tagged release.
 - The heap trap (`fms_alloc_guard`) and the no-allocation proof that uses it.
 - CI, coverage, clang-tidy, cppcheck, the sanitizers, and a release workflow.
 
+[0.10.0]: https://github.com/subtilitas/fms-yaml/releases/tag/v0.10.0
 [0.9.0]: https://github.com/subtilitas/fms-yaml/releases/tag/v0.9.0
 [0.2.1]: https://github.com/subtilitas/fms-yaml/releases/tag/v0.2.1
 [0.2.0]: https://github.com/subtilitas/fms-yaml/releases/tag/v0.2.0
