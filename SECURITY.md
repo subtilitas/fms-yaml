@@ -51,5 +51,6 @@ there — no allocation, no exceptions, views that stay valid until the next cal
 
 ## Supported versions
 
-Before 1.0, only the most recent release. What a version number promises is in
+The most recent release. A fix is issued as a patch on the current major; older
+majors are not maintained. What a version number promises is in
 [docs/stability.md](docs/stability.md).

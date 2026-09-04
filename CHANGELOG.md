@@ -6,6 +6,28 @@ numbers promise is in [docs/stability.md](docs/stability.md).
 
 ## Unreleased
 
+## [1.0.0] - unreleased
+
+`v1.0.0-rc1` is tagged from this section.
+
+1.0 is not a statement that the code changed. It is a statement that
+[docs/stability.md](docs/stability.md) is now a promise rather than a
+description: the headers listed there are the interface, the YAML schema and the
+exported CMake targets are covered with them, and what is deliberately not
+covered is deliberate.
+
+### Changed
+
+- **The major is the breaking number.** Through 0.x the minor carried that
+  meaning, which is why 0.9 and 0.10 are not interchangeable. From here 1.2 is
+  compatible with 1.0 and 2.0 need not be.
+- `write_basic_package_version_file` moves from `SameMinorVersion` to
+  `SameMajorVersion` to match, so `find_package(fms_yaml 1.0)` accepts a later
+  1.x install. `tools/install_check.sh` asserts whichever of the two the
+  declared version means, and that the mode declared in `CMakeLists.txt` is that
+  one — the two rules cannot be told apart by `find_package` at a `.0` version,
+  so the mode is compared directly as well.
+
 ### Added
 
 - `tools/install_check.sh` checks what `find_package` accepts. The
@@ -161,6 +183,7 @@ First tagged release.
 - The heap trap (`fms_alloc_guard`) and the no-allocation proof that uses it.
 - CI, coverage, clang-tidy, cppcheck, the sanitizers, and a release workflow.
 
+[1.0.0]: https://github.com/subtilitas/fms-yaml/releases/tag/v1.0.0-rc1
 [0.10.0]: https://github.com/subtilitas/fms-yaml/releases/tag/v0.10.0
 [0.9.0]: https://github.com/subtilitas/fms-yaml/releases/tag/v0.9.0
 [0.2.1]: https://github.com/subtilitas/fms-yaml/releases/tag/v0.2.1
