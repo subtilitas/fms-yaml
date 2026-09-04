@@ -8,7 +8,9 @@ numbers promise is in [docs/stability.md](docs/stability.md).
 
 ## [1.0.0] - unreleased
 
-`v1.0.0-rc1` is tagged from this section.
+`v1.0.0-rc1` and `v1.0.0-rc2` are tagged from this section. rc2 changes no
+source: it carries the `tools/install_check.sh` version-file probe described
+below, which rc1 predates.
 
 1.0 is not a statement that the code changed. It is a statement that
 [docs/stability.md](docs/stability.md) is now a promise rather than a
@@ -187,7 +189,7 @@ First tagged release.
 - The heap trap (`fms_alloc_guard`) and the no-allocation proof that uses it.
 - CI, coverage, clang-tidy, cppcheck, the sanitizers, and a release workflow.
 
-[1.0.0]: https://github.com/subtilitas/fms-yaml/releases/tag/v1.0.0-rc1
+[1.0.0]: https://github.com/subtilitas/fms-yaml/releases/tag/v1.0.0-rc2
 [0.10.0]: https://github.com/subtilitas/fms-yaml/releases/tag/v0.10.0
 [0.9.0]: https://github.com/subtilitas/fms-yaml/releases/tag/v0.9.0
 [0.2.1]: https://github.com/subtilitas/fms-yaml/releases/tag/v0.2.1
