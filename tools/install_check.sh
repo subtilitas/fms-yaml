@@ -138,12 +138,15 @@ tuned_report="$("${work}/consumer-tuned-build/consumer" \
 echo "${tuned_report}"
 
 # --- what find_package refuses ---------------------------------------------
-# write_basic_package_version_file(COMPATIBILITY SameMinorVersion) is a promise
-# docs/stability.md makes in prose - before 1.0 the minor is the breaking
-# number, so a consumer asking for the previous one is refused rather than
-# compiled against.  tests/consumer asks for no version at all, so nothing here
-# tested it until now: changing the compatibility mode would have left the page
-# quietly false.
+# The compatibility mode is a promise docs/stability.md makes in prose: which
+# versions a consumer may ask for and be given this install.  tests/consumer
+# asks for no version at all, so nothing here tested it until this was added -
+# changing the mode would have left the page quietly false.
+#
+# Which rule applies depends on the version project() declares, because the
+# meaning of the numbers changes at 1.0.  Both are asserted here rather than
+# one being written out, so the release that crosses over is checked by the same
+# gate on both sides of it.
 version="$(sed -n 's/^project(fms_yaml VERSION \([0-9.]*\).*/\1/p' "${root}/CMakeLists.txt")"
 major="${version%%.*}"
 rest="${version#*.}"
@@ -157,10 +160,30 @@ project(fms_version_probe LANGUAGES NONE)
 find_package(fms_yaml ${FMS_REQUESTED} REQUIRED)
 CMAKE
 
-# accepted: this version, and this major.minor.  refused: the previous minor,
-# the next minor, the next major, and a patch newer than what is installed.
-accepted="${version} ${major}.${minor}"
-refused="${major}.$((minor - 1)) ${major}.$((minor - 1)).9 ${major}.$((minor + 1)) $((major + 1)).0 ${major}.${minor}.$((patch + 1))"
+if [ "${major}" -eq 0 ]; then
+  # SameMinorVersion, which is what 0.x is configured with: the minor is the
+  # breaking number, so the previous and next one are both refused.
+  rule="SameMinorVersion"
+  accepted="${version} ${major}.${minor}"
+  refused="${major}.$((minor + 1)) $((major + 1)).0 ${major}.${minor}.$((patch + 1))"
+  # Only when there is a previous minor: 0.0.x would otherwise ask for "0.-1",
+  # which tests the parser rather than the compatibility rule.
+  if [ "${minor}" -gt 0 ]; then
+    refused="${refused} ${major}.$((minor - 1)) ${major}.$((minor - 1)).9"
+  fi
+else
+  # SameMajorVersion: an older minor within this major is compatible and is
+  # accepted, which is the whole difference between the two rules.
+  rule="SameMajorVersion"
+  accepted="${version} ${major}.${minor}"
+  if [ "${minor}" -ne 0 ]; then
+    accepted="${accepted} ${major}.0"
+  fi
+  refused="$((major + 1)).0 ${major}.$((minor + 1)) ${major}.${minor}.$((patch + 1))"
+  if [ "${minor}" -gt 0 ]; then
+    accepted="${accepted} ${major}.$((minor - 1))"
+  fi
+fi
 
 check_find_package() {   # check_find_package <requested> <accepted|refused>
   local requested="$1" want="$2" outcome
@@ -176,14 +199,27 @@ check_find_package() {   # check_find_package <requested> <accepted|refused>
   if [ "${outcome}" != "${want}" ]; then
     echo "install_check: find_package(fms_yaml ${requested}) was ${outcome}," >&2
     echo "               and ${version} is installed - expected ${want}." >&2
-    echo "               COMPATIBILITY is what decides this; docs/stability.md" >&2
-    echo "               describes it as SameMinorVersion." >&2
+    echo "               COMPATIBILITY is what decides this; ${version} means" >&2
+    echo "               ${rule}, which is what docs/stability.md describes." >&2
     return 1
   fi
   printf '  find_package(fms_yaml %-9s -> %s\n' "${requested})" "${outcome}"
 }
 
-echo "install_check: what find_package accepts against ${version}"
+# What find_package does cannot separate the two rules at a .0 version: they
+# differ only over an older minor within the same major, and 1.0.0 has none.  So
+# the declared mode is compared with the one the version means, which is a check
+# that says something at 1.0.0 as well as after it.
+declared_rule="$(sed -n 's/^ *COMPATIBILITY \([A-Za-z]*\)) *$/\1/p' "${root}/CMakeLists.txt")"
+if [ "${declared_rule}" != "${rule}" ]; then
+  echo "install_check: CMakeLists.txt declares COMPATIBILITY ${declared_rule}," >&2
+  echo "               and ${version} means ${rule}." >&2
+  echo "               docs/stability.md describes the second." >&2
+  exit 1
+fi
+echo "install_check: COMPATIBILITY ${declared_rule}, which is what ${version} means"
+
+echo "install_check: what find_package accepts against ${version} (${rule})"
 for requested in ${accepted}; do
   check_find_package "${requested}" accepted
 done

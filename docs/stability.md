@@ -1,12 +1,15 @@
 # What a version number promises
 
-Versions follow [Semantic Versioning 2.0.0](https://semver.org/). Before 1.0
-the minor is the breaking number: 0.2.x is compatible with 0.2.0, and 0.3.0 may
-break anything on this page. From 1.0 the major takes that role and the minor
-becomes additive. `write_basic_package_version_file` is configured to match —
-`SameMinorVersion` now, `SameMajorVersion` at 1.0 — so
-`find_package(fms_yaml 0.2)` refuses a 0.3 install rather than compiling
-against it.
+Versions follow [Semantic Versioning 2.0.0](https://semver.org/). The major is
+the breaking number: 1.2 is compatible with 1.0, and 2.0 may break anything on
+this page. The minor is additive, the patch neither.
+`write_basic_package_version_file` is configured to match — `SameMajorVersion` —
+so `find_package(fms_yaml 1.0)` accepts a 1.2 install and refuses a 2.0 one.
+`tools/install_check.sh` asserts that against the installed package rather than
+leaving it here as prose.
+
+Through 0.x the minor carried that meaning instead, which is why 0.9 and 0.10
+are not interchangeable.
 
 ## What is covered
 

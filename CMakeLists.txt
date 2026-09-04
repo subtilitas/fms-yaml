@@ -1,5 +1,5 @@
 cmake_minimum_required(VERSION 3.20)
-project(fms_yaml VERSION 0.10.0 LANGUAGES CXX)
+project(fms_yaml VERSION 1.0.0 LANGUAGES CXX)
 
 # ---------------------------------------------------------------------------
 # Options
@@ -656,13 +656,17 @@ if(FMS_INSTALL)
     ${PROJECT_BINARY_DIR}/fms_yamlConfig.cmake
     INSTALL_DESTINATION ${CMAKE_INSTALL_LIBDIR}/cmake/fms_yaml)
 
-  # SameMinorVersion, not SameMajorVersion: at 0.x the minor is the breaking
-  # number, so 0.2 and 0.3 are not interchangeable.  This becomes
-  # SameMajorVersion at 1.0, when the major starts carrying that meaning.
+  # SameMajorVersion: from 1.0 the major is the breaking number.  The rule is
+  # directional - a 1.2 install satisfies a consumer asking for 1.0, and a 1.0
+  # install does not satisfy one asking for 1.2 - so it is backward
+  # compatibility within a major, not interchangeability.  It was
+  # SameMinorVersion through 0.x, where the minor carried that meaning;
+  # tools/install_check.sh asserts whichever of the two applies to the version
+  # project() declares, and that this line agrees with it.
   write_basic_package_version_file(
     ${PROJECT_BINARY_DIR}/fms_yamlConfigVersion.cmake
     VERSION       ${PROJECT_VERSION}
-    COMPATIBILITY SameMinorVersion)
+    COMPATIBILITY SameMajorVersion)
 
   install(FILES
     ${PROJECT_BINARY_DIR}/fms_yamlConfig.cmake
