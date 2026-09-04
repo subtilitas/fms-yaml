@@ -288,6 +288,50 @@ jobs:
         run: bash tools/capacity_sweep.sh
 
   # ---------------------------------------------------------------------------
+  # Every other job builds against the pinned ETL.  A consumer supplying its own
+  # takes the find_package(etl REQUIRED) branch and may bring any version, so
+  # this is the job that says what happens on the ones this project does not
+  # pin.  The two below the 20.40.1 tag are in the matrix deliberately: that is
+  # where sizeof(etl::vector) lost 8 bytes with no interface change, and a
+  # matrix covering only one side of it would stop measuring the boundary.
+  #
+  # Sizes are recorded, not asserted.  docs/stability.md promises no binary
+  # compatibility in either direction, so a layout that moves is news rather
+  # than a failure - but it is never silent.
+  # The matrix above is a third place the ETL version lives, after the
+  # FetchContent pin and tools/install_check.sh.  Nothing makes them agree, so
+  # this asserts the one that would otherwise drift quietly: a matrix that has
+  # stopped listing the pin tests a range the project does not itself build at.
+  etl-pin:
+    name: etl (matrix lists the pin)
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v7
+      - name: The matrix lists the pinned ETL
+        run: bash tools/etl_range_check.sh --check
+
+  etl-range:
+    name: etl (${{ matrix.etl }})
+    runs-on: ubuntu-24.04
+    strategy:
+      fail-fast: false
+      matrix:
+        etl: ['20.39.0', '20.39.4', '20.40.0', '20.40.1',
+              '20.41.0', '20.43.0', '20.44.0', '20.46.0']
+    steps:
+      - uses: actions/checkout@v7
+
+      - name: Cache fetched dependencies
+        uses: actions/cache@v6
+        with:
+          path: ${{ env.FETCHCONTENT_BASE_DIR }}
+          key: deps-etl-range-${{ hashFiles('CMakeLists.txt') }}
+          restore-keys: deps-etl-range-
+
+      - name: Build and test against ETL ${{ matrix.etl }}
+        run: bash tools/etl_range_check.sh '${{ matrix.etl }}'
+
+  # ---------------------------------------------------------------------------
   clang-tidy:
     name: clang-tidy
     runs-on: ubuntu-24.04

@@ -43,6 +43,7 @@ tree rather than by the reporting service.
 | a public header | check the table in [docs/stability.md](docs/stability.md) still matches |
 | anything user-visible | add a line to [CHANGELOG.md](CHANGELOG.md) under Unreleased |
 | the version | only `project()` in `CMakeLists.txt`; `fms/version.hpp` is generated from it |
+| the pinned ETL version | update `ETL_VERSION` in `tools/install_check.sh` and add the new pin to the `etl-range` matrix in `.github/workflows/ci.yml`; `tools/etl_range_check.sh --check` fails until the matrix lists it |
 
 ## Writing
 
