@@ -137,6 +137,60 @@ tuned_report="$("${work}/consumer-tuned-build/consumer" \
   "${root}/examples/car/car.machine.yaml")"
 echo "${tuned_report}"
 
+# --- what find_package refuses ---------------------------------------------
+# write_basic_package_version_file(COMPATIBILITY SameMinorVersion) is a promise
+# docs/stability.md makes in prose - before 1.0 the minor is the breaking
+# number, so a consumer asking for the previous one is refused rather than
+# compiled against.  tests/consumer asks for no version at all, so nothing here
+# tested it until now: changing the compatibility mode would have left the page
+# quietly false.
+version="$(sed -n 's/^project(fms_yaml VERSION \([0-9.]*\).*/\1/p' "${root}/CMakeLists.txt")"
+major="${version%%.*}"
+rest="${version#*.}"
+minor="${rest%%.*}"
+patch="${rest#*.}"
+
+mkdir -p "${work}/version-probe"
+cat > "${work}/version-probe/CMakeLists.txt" <<'CMAKE'
+cmake_minimum_required(VERSION 3.20)
+project(fms_version_probe LANGUAGES NONE)
+find_package(fms_yaml ${FMS_REQUESTED} REQUIRED)
+CMAKE
+
+# accepted: this version, and this major.minor.  refused: the previous minor,
+# the next minor, the next major, and a patch newer than what is installed.
+accepted="${version} ${major}.${minor}"
+refused="${major}.$((minor - 1)) ${major}.$((minor - 1)).9 ${major}.$((minor + 1)) $((major + 1)).0 ${major}.${minor}.$((patch + 1))"
+
+check_find_package() {   # check_find_package <requested> <accepted|refused>
+  local requested="$1" want="$2" outcome
+  if cmake -S "${work}/version-probe" -B "${work}/version-probe/build" \
+       -DCMAKE_PREFIX_PATH="${prefix}" \
+       -DFMS_REQUESTED="${requested}" > "${work}/version-${requested}.log" 2>&1; then
+    outcome=accepted
+  else
+    outcome=refused
+  fi
+  rm -rf "${work}/version-probe/build"
+
+  if [ "${outcome}" != "${want}" ]; then
+    echo "install_check: find_package(fms_yaml ${requested}) was ${outcome}," >&2
+    echo "               and ${version} is installed - expected ${want}." >&2
+    echo "               COMPATIBILITY is what decides this; docs/stability.md" >&2
+    echo "               describes it as SameMinorVersion." >&2
+    return 1
+  fi
+  printf '  find_package(fms_yaml %-9s -> %s\n' "${requested})" "${outcome}"
+}
+
+echo "install_check: what find_package accepts against ${version}"
+for requested in ${accepted}; do
+  check_find_package "${requested}" accepted
+done
+for requested in ${refused}; do
+  check_find_package "${requested}" refused
+done
+
 tag_of() { echo "$1" | sed -n 's/.*(capacities \([0-9_]*\)).*/\1/p'; }
 default_tag="$(tag_of "${report}")"
 tuned_tag="$(tag_of "${tuned_report}")"

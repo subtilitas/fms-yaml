@@ -6,6 +6,13 @@ numbers promise is in [docs/stability.md](docs/stability.md).
 
 ## Unreleased
 
+### Added
+
+- `tools/install_check.sh` checks what `find_package` accepts. The
+  `SameMinorVersion` compatibility `docs/stability.md` describes was prose with
+  no gate: `tests/consumer` asks for no version at all, so changing the mode
+  would have left the page quietly false.
+
 ## [0.10.0] - 2026-09-04
 
 Not compatible with 0.9.x. `Status::FileNotReadable` is a status a call could
