@@ -17,10 +17,10 @@
 #
 # Needs git, cmake and a compiler.  Everything it produces - the dependency
 # sources, the build trees, their logs, and the install prefixes at
-# <work-dir>/prefix and <work-dir>/prefix-tuned - stays inside the work
-# directory.  The prefixes are emptied first: a header left behind by an
-# earlier run would satisfy the consumer's #include after the install rules
-# stopped shipping it.
+# <work-dir>/prefix, <work-dir>/prefix-tuned and <work-dir>/prefix-relabelled -
+# stays inside the work directory.  The prefixes are emptied first: a header
+# left behind by an earlier run would satisfy the consumer's #include after the
+# install rules stopped shipping it.
 set -euo pipefail
 
 root="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
@@ -70,7 +70,7 @@ install_dependency() {   # install_dependency <name> <url> <tag> [cmake args...]
   run "${work}/${name}-install.log" cmake --install "${work}/${name}-build"
 }
 
-rm -rf "${prefix}" "${work}/prefix-tuned"
+rm -rf "${prefix}" "${work}/prefix-tuned" "${work}/prefix-relabelled"
 
 echo "install_check: ETL ${ETL_VERSION} and yaml-cpp ${YAML_CPP_VERSION} -> ${prefix}"
 install_dependency etl https://github.com/ETLCPP/etl.git "${ETL_VERSION}"
@@ -148,6 +148,19 @@ echo "${tuned_report}"
 # one being written out, so the release that crosses over is checked by the same
 # gate on both sides of it.
 version="$(sed -n 's/^project(fms_yaml VERSION \([0-9.]*\).*/\1/p' "${root}/CMakeLists.txt")"
+
+# project() accepts up to four components, and every rule below reads exactly
+# three.  A tweak component reaches $((patch + 1)) as "0.1" and stops the run
+# forty lines later on an unset variable, naming a bash operator rather than the
+# version.  The shape is checked where it is read instead.
+if ! [[ "${version}" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
+  echo "install_check: CMakeLists.txt declares VERSION ${version:-<none>}." >&2
+  echo "               This gate derives the compatibility rule from" >&2
+  echo "               MAJOR.MINOR.PATCH and has no meaning for a version" >&2
+  echo "               of another shape." >&2
+  exit 1
+fi
+
 major="${version%%.*}"
 rest="${version#*.}"
 minor="${rest%%.*}"
@@ -176,20 +189,31 @@ else
   # accepted, which is the whole difference between the two rules.
   rule="SameMajorVersion"
   accepted="${version} ${major}.${minor}"
-  if [ "${minor}" -ne 0 ]; then
+  refused="$((major + 1)).0 ${major}.$((minor + 1)) ${major}.${minor}.$((patch + 1))"
+  # The first minor of this major, and the one below the current minor.  They
+  # are the same string at minor 1, so the second is added above it only; asking
+  # twice costs a configure and reads as two checks where there is one.
+  if [ "${minor}" -gt 0 ]; then
     accepted="${accepted} ${major}.0"
   fi
-  refused="$((major + 1)).0 ${major}.$((minor + 1)) ${major}.${minor}.$((patch + 1))"
-  if [ "${minor}" -gt 0 ]; then
+  if [ "${minor}" -gt 1 ]; then
     accepted="${accepted} ${major}.$((minor - 1))"
   fi
 fi
 
+# probe_prefix and probe_version name the install under test.  They default to
+# the one just built; the relabelled probe below sets both, so that a failure
+# says which of the two prefixes it asked and what that one reports as its
+# version, and so that the two runs do not overwrite each other's logs.
 check_find_package() {   # check_find_package <requested> <accepted|refused>
   local requested="$1" want="$2" outcome
+  local against="${probe_prefix:-${prefix}}"
+  local installed="${probe_version:-${version}}"
+  local log="${work}/version-${requested}${probe_version:+-as-${probe_version}}.log"
+
   if cmake -S "${work}/version-probe" -B "${work}/version-probe/build" \
-       -DCMAKE_PREFIX_PATH="${prefix}" \
-       -DFMS_REQUESTED="${requested}" > "${work}/version-${requested}.log" 2>&1; then
+       -DCMAKE_PREFIX_PATH="${against}" \
+       -DFMS_REQUESTED="${requested}" > "${log}" 2>&1; then
     outcome=accepted
   else
     outcome=refused
@@ -198,8 +222,8 @@ check_find_package() {   # check_find_package <requested> <accepted|refused>
 
   if [ "${outcome}" != "${want}" ]; then
     echo "install_check: find_package(fms_yaml ${requested}) was ${outcome}," >&2
-    echo "               and ${version} is installed - expected ${want}." >&2
-    echo "               COMPATIBILITY is what decides this; ${version} means" >&2
+    echo "               and ${installed} is installed - expected ${want}." >&2
+    echo "               COMPATIBILITY is what decides this; ${installed} means" >&2
     echo "               ${rule}, which is what docs/stability.md describes." >&2
     return 1
   fi
@@ -226,6 +250,35 @@ done
 for requested in ${refused}; do
   check_find_package "${requested}" refused
 done
+
+# At a .0 version the probes above cannot separate the two rules - they differ
+# only over an older minor within the same major, and a .0 version has none - so
+# what decides the answer, fms_yamlConfigVersion.cmake, is never observed and
+# the promise rests on the declared_rule comparison above.  A copy of that
+# installed file relabelled to the next minor supplies the missing case: the
+# rule logic is the file this build generated, and only the version it reports
+# changes.  The first request is the discriminating one, accepted under
+# SameMajorVersion and refused under SameMinorVersion.
+if [ "${major}" -gt 0 ] && [ "${minor}" -eq 0 ]; then
+  relabelled="${work}/prefix-relabelled"
+  rm -rf "${relabelled}"
+  cp -a "${prefix}" "${relabelled}"
+
+  version_file="$(find "${relabelled}" -name fms_yamlConfigVersion.cmake)"
+  if [ ! -f "${version_file}" ]; then
+    echo "install_check: no fms_yamlConfigVersion.cmake under ${prefix}." >&2
+    exit 1
+  fi
+  sed -i "s/${major}\.${minor}\.${patch}/${major}.1.0/g" "${version_file}"
+
+  echo "install_check: the same file relabelled ${major}.1.0, where the rules differ"
+  probe_prefix="${relabelled}" probe_version="${major}.1.0" \
+    check_find_package "${major}.${minor}" accepted
+  probe_prefix="${relabelled}" probe_version="${major}.1.0" \
+    check_find_package "${major}.1" accepted
+  probe_prefix="${relabelled}" probe_version="${major}.1.0" \
+    check_find_package "$((major + 1)).0" refused
+fi
 
 tag_of() { echo "$1" | sed -n 's/.*(capacities \([0-9_]*\)).*/\1/p'; }
 default_tag="$(tag_of "${report}")"

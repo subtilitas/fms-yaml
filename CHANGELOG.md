@@ -25,15 +25,19 @@ covered is deliberate.
   `SameMajorVersion` to match, so `find_package(fms_yaml 1.0)` accepts a later
   1.x install. `tools/install_check.sh` asserts whichever of the two the
   declared version means, and that the mode declared in `CMakeLists.txt` is that
-  one — the two rules cannot be told apart by `find_package` at a `.0` version,
-  so the mode is compared directly as well.
+  one. The two rules cannot be told apart by `find_package` at a `.0` version,
+  so the mode is compared directly, and the installed
+  `fms_yamlConfigVersion.cmake` is asked a second time through a copy relabelled
+  to the next minor — the one place the two rules give different answers.
 
 ### Added
 
 - `tools/install_check.sh` checks what `find_package` accepts. The
-  `SameMinorVersion` compatibility `docs/stability.md` describes was prose with
-  no gate: `tests/consumer` asks for no version at all, so changing the mode
-  would have left the page quietly false.
+  compatibility `docs/stability.md` describes was prose with no gate:
+  `tests/consumer` asks for no version at all, so changing the mode would have
+  left the page quietly false. A `project()` version that is not
+  MAJOR.MINOR.PATCH is refused with a stated reason, because every rule the
+  script derives reads exactly three components.
 
 ## [0.10.0] - 2026-09-04
 
