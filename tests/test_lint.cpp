@@ -258,7 +258,7 @@ states:
   SUBCASE("every value the range allows is excluded by name") {
     // "gear >= 1", "gear <= 1", "gear != 1" is three conditions in one guard,
     // which a build with fewer cannot express - there is nothing to lint.
-    if (fms::limits::kMaxConditionsPerGuard < 3) {
+    if constexpr (fms::limits::kMaxConditionsPerGuard < 3) {
       MESSAGE("skipped: needs FMS_MAX_CONDITIONS_PER_GUARD >= 3");
       return;
     }
@@ -396,7 +396,7 @@ TEST_CASE("one alternative produces one finding, and the deepest one wins") {
   // Three alternatives for one trigger, which a build with fewer cannot
   // express: the document would not load, and there would be no ordering to
   // lint.
-  if (fms::limits::kMaxAlternatives < 3) {
+  if constexpr (fms::limits::kMaxAlternatives < 3) {
     MESSAGE("skipped: needs FMS_MAX_ALTERNATIVES >= 3");
     return;
   }
@@ -533,7 +533,7 @@ TEST_CASE("a shadowed alternative is described by the one that beats it") {
   // Three alternatives for one trigger, which a build with fewer cannot
   // express: the document would not load, and there would be no ordering to
   // lint.
-  if (fms::limits::kMaxAlternatives < 3) {
+  if constexpr (fms::limits::kMaxAlternatives < 3) {
     MESSAGE("skipped: needs FMS_MAX_ALTERNATIVES >= 3");
     return;
   }

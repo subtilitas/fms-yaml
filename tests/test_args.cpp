@@ -6,6 +6,7 @@
 
 #include <cstdio>
 #include <cstring>
+#include <string>
 
 #include "fms/args.hpp"
 #include "fms/limits.hpp"
@@ -50,18 +51,25 @@ TEST_CASE("no arguments is not an error") {
 template <std::size_t N, typename Check>
 void in_batches(const char* const (&keys)[N], const char* const (&values)[N], Check check) {
   for (std::size_t first = 0; first < N; first += fms::limits::kMaxArguments) {
-    char text[256];
-    int  used = 0;
     const std::size_t last = (first + fms::limits::kMaxArguments < N)
                                  ? first + fms::limits::kMaxArguments
                                  : N;
+
+    // Built by appending rather than by advancing an offset into a fixed
+    // buffer: snprintf returns what it would have written, so accumulating its
+    // result walks past the end as soon as anything is truncated.
+    std::string text;
     for (std::size_t i = first; i < last; ++i) {
-      used += std::snprintf(text + used, sizeof(text) - static_cast<std::size_t>(used),
-                            "%s%s=%s", (i == first) ? "" : " ", keys[i], values[i]);
+      if (i != first) {
+        text += ' ';
+      }
+      text += keys[i];
+      text += '=';
+      text += values[i];
     }
 
     fms::Args args;
-    REQUIRE(args.parse(sv(text)) == fms::Status::Ok);
+    REQUIRE(args.parse(sv(text.c_str())) == fms::Status::Ok);
     for (std::size_t i = first; i < last; ++i) {
       check(args, i);
     }
@@ -129,14 +137,14 @@ TEST_CASE("malformed arguments are reported, not guessed at") {
   CHECK(args.parse(sv("a=1 a=2")) == fms::Status::DuplicateName);
   // One pair past whatever this build allows, rather than five against a
   // remembered four.
-  char past_capacity[256];
-  int  written = 0;
+  std::string past_capacity;
   for (std::size_t i = 0; i <= fms::limits::kMaxArguments; ++i) {
-    written += std::snprintf(past_capacity + written,
-                             sizeof(past_capacity) - static_cast<std::size_t>(written),
-                             "%sk%zu=%zu", (i == 0) ? "" : " ", i, i);
+    if (i != 0) {
+      past_capacity += ' ';
+    }
+    past_capacity += "k" + std::to_string(i) + "=" + std::to_string(i);
   }
-  CHECK(args.parse(sv(past_capacity)) == fms::Status::CapacityExceeded);
+  CHECK(args.parse(sv(past_capacity.c_str())) == fms::Status::CapacityExceeded);
 
   char long_key[fms::limits::kMaxNameLength + 8];
   std::memset(long_key, 'x', sizeof(long_key));
