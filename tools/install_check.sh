@@ -165,8 +165,12 @@ if [ "${major}" -eq 0 ]; then
   # breaking number, so the previous and next one are both refused.
   rule="SameMinorVersion"
   accepted="${version} ${major}.${minor}"
-  refused="${major}.$((minor - 1)) ${major}.$((minor - 1)).9 ${major}.$((minor + 1))"
-  refused="${refused} $((major + 1)).0 ${major}.${minor}.$((patch + 1))"
+  refused="${major}.$((minor + 1)) $((major + 1)).0 ${major}.${minor}.$((patch + 1))"
+  # Only when there is a previous minor: 0.0.x would otherwise ask for "0.-1",
+  # which tests the parser rather than the compatibility rule.
+  if [ "${minor}" -gt 0 ]; then
+    refused="${refused} ${major}.$((minor - 1)) ${major}.$((minor - 1)).9"
+  fi
 else
   # SameMajorVersion: an older minor within this major is compatible and is
   # accepted, which is the whole difference between the two rules.
