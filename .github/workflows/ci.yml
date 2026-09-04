@@ -1,11 +1,12 @@
 # SPDX-License-Identifier: MIT
 #
-# The build gate.  Six jobs, each answering a different question:
+# The build gate.  Seven jobs, each answering a different question:
 #
 #   build       does it compile and pass its tests, on three toolchains
 #   coverage    how much of it did the tests actually reach
 #   install     can anyone else consume it: install, find_package, link, run
 #   cross       does the part meant for a target compile for one
+#   capacities  do the tests test the code, or the default configuration
 #   clang-tidy  what is wrong with code no test happened to run
 #   cppcheck    a second opinion from a different engine
 #
@@ -260,6 +261,31 @@ jobs:
 
       - name: Compile fms_core and fms_inspect for a Cortex-M4
         run: bash tools/cross_check.sh
+
+  # ---------------------------------------------------------------------------
+  # Every other job builds at the capacities in include/fms/limits.hpp, which is
+  # one instantiation of Model, Setup, Args, Runtime and lint::Report.  A test
+  # that writes out four argument pairs, or a 400-character line, or a whole
+  # diagnostic sentence, then asserts something about that configuration rather
+  # than about the code - and passes for a reason nobody chose.
+  #
+  # Three configurations, including the tuning docs/architecture.md gives for
+  # the car example, so the documentation's own claim is built and tested.
+  capacities:
+    name: capacities
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v7
+
+      - name: Cache fetched dependencies
+        uses: actions/cache@v6
+        with:
+          path: ${{ env.FETCHCONTENT_BASE_DIR }}
+          key: deps-capacities-${{ hashFiles('CMakeLists.txt') }}
+          restore-keys: deps-capacities-
+
+      - name: Build and test at three capacity configurations
+        run: bash tools/capacity_sweep.sh
 
   # ---------------------------------------------------------------------------
   clang-tidy:

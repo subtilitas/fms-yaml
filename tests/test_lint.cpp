@@ -12,6 +12,7 @@
 #include <etl/array.h>
 
 #include "fms/inspect/lint.hpp"
+#include "fms/limits.hpp"
 #include "fms/yaml_loader.hpp"
 
 namespace {
@@ -68,6 +69,14 @@ struct Linted {
     return message;
   }
 };
+
+/// True when the message filled its buffer, so text past that point was cut and
+/// cannot be asserted.  describe() writes a whole sentence into
+/// FMS_MAX_MESSAGE_LENGTH and the guard text sits at the end of it, which makes
+/// it the first thing a smaller build loses.
+bool clipped(const fms::Message& message) {
+  return message.size() >= fms::limits::kMaxMessageLength;
+}
 
 bool contains(const fms::Message& haystack, const char* needle) {
   return std::strstr(haystack.c_str(), needle) != nullptr;
@@ -213,8 +222,11 @@ states:
 )",
                         "idle");
     CHECK(linted.count(fms::lint::Check::ImpossibleGuard) == 1);
-    CHECK(contains(linted.text(fms::lint::Check::ImpossibleGuard), "pedal > 60"));
-    CHECK(contains(linted.text(fms::lint::Check::ImpossibleGuard), "pedal < 5"));
+    const fms::Message text = linted.text(fms::lint::Check::ImpossibleGuard);
+    if (!clipped(text)) {
+      CHECK(contains(text, "pedal > 60"));
+      CHECK(contains(text, "pedal < 5"));
+    }
   }
 
   SUBCASE("a value required to be two different numbers") {
@@ -244,6 +256,12 @@ states:
   }
 
   SUBCASE("every value the range allows is excluded by name") {
+    // "gear >= 1", "gear <= 1", "gear != 1" is three conditions in one guard,
+    // which a build with fewer cannot express - there is nothing to lint.
+    if constexpr (fms::limits::kMaxConditionsPerGuard < 3) {
+      MESSAGE("skipped: needs FMS_MAX_CONDITIONS_PER_GUARD >= 3");
+      return;
+    }
     const Linted linted(R"(
 triggers: [{name: press}]
 states:
@@ -375,6 +393,14 @@ states:
 }
 
 TEST_CASE("one alternative produces one finding, and the deepest one wins") {
+  // Three alternatives for one trigger, which a build with fewer cannot
+  // express: the document would not load, and there would be no ordering to
+  // lint.
+  if constexpr (fms::limits::kMaxAlternatives < 3) {
+    MESSAGE("skipped: needs FMS_MAX_ALTERNATIVES >= 3");
+    return;
+  }
+
   // The third alternative is both unreachable and impossible.  Only the
   // unreachability is reported: fixing that is what makes the guard matter.
   const Linted linted(R"(
@@ -494,14 +520,24 @@ states:
   CHECK(std::strstr(message.c_str(), "state 'idle'") != nullptr);
   CHECK(std::strstr(message.c_str(), "trigger 'go'") != nullptr);
   CHECK(std::strstr(message.c_str(), "alternative 1") != nullptr);
-  CHECK(std::strstr(message.c_str(), "can never hold") != nullptr);
-  // Both halves of the contradiction, joined - one alone would not explain it.
-  CHECK(std::strstr(message.c_str(), "pedal > 60") != nullptr);
-  CHECK(std::strstr(message.c_str(), "pedal < 5") != nullptr);
-  CHECK(std::strstr(message.c_str(), " and ") != nullptr);
+  if (!clipped(message)) {
+    CHECK(std::strstr(message.c_str(), "can never hold") != nullptr);
+    // Both halves of the contradiction, joined - one alone would not explain it.
+    CHECK(std::strstr(message.c_str(), "pedal > 60") != nullptr);
+    CHECK(std::strstr(message.c_str(), "pedal < 5") != nullptr);
+    CHECK(std::strstr(message.c_str(), " and ") != nullptr);
+  }
 }
 
 TEST_CASE("a shadowed alternative is described by the one that beats it") {
+  // Three alternatives for one trigger, which a build with fewer cannot
+  // express: the document would not load, and there would be no ordering to
+  // lint.
+  if constexpr (fms::limits::kMaxAlternatives < 3) {
+    MESSAGE("skipped: needs FMS_MAX_ALTERNATIVES >= 3");
+    return;
+  }
+
   const Linted linted(R"(
 triggers:
   - {name: go}
@@ -548,6 +584,8 @@ states:
 
   REQUIRE(linted.count(fms::lint::Check::ImpossibleGuard) == 1);
   const fms::Message message = linted.text(fms::lint::Check::ImpossibleGuard);
-  CHECK(std::strstr(message.c_str(), "mode == sport") != nullptr);
-  CHECK(std::strstr(message.c_str(), "mode != sport") != nullptr);
+  if (!clipped(message)) {
+    CHECK(std::strstr(message.c_str(), "mode == sport") != nullptr);
+    CHECK(std::strstr(message.c_str(), "mode != sport") != nullptr);
+  }
 }

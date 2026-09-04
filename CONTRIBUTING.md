@@ -22,6 +22,7 @@ bash tools/analyze.sh          # clang-tidy, cppcheck, and the tooling lint
 bash tools/coverage.sh         # build, test, HTML report, per-file summary
 bash tools/install_check.sh    # install, then build a consumer through find_package
 bash tools/cross_check.sh      # compile fms_core and fms_inspect for a Cortex-M4
+bash tools/capacity_sweep.sh   # the suite at three capacity configurations
 ```
 
 `ctest` runs the rest: `abi_guard`, `symbol_check`, `car_config_check`,
@@ -37,6 +38,7 @@ tree rather than by the reporting service.
 | If you change | Also |
 |---|---|
 | a capacity in `include/fms/limits.hpp` | add it to the tag in `include/fms/abi.hpp` and to the list in `tests/test_abi.cpp`; `abi_guard` fails until you do |
+| a test that names a capacity | derive it from `fms::limits::` rather than writing the number out, or skip the case with a printed reason where the configuration cannot express it; `tools/capacity_sweep.sh` is what notices |
 | `examples/car/car.machine.yaml` | `python3 tools/diagram_sync.py --write` to redraw the README diagram |
 | a public header | check the table in [docs/stability.md](docs/stability.md) still matches |
 | anything user-visible | add a line to [CHANGELOG.md](CHANGELOG.md) under Unreleased |

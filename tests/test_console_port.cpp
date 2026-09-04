@@ -17,6 +17,7 @@
 #include <sstream>
 #include <string>
 
+#include "fms/limits.hpp"
 #include "fms/port/console_port.hpp"
 
 namespace {
@@ -179,8 +180,13 @@ TEST_CASE("a channel with no arguments carries an empty argument view") {
 
 TEST_CASE("a line too long for the buffer is refused, and the next one is read") {
   // The buffer holds a channel plus a message; anything longer cannot be stored
-  // without truncating, which would silently change what the sender said.
-  const std::string overlong(400, 'x');
+  // without truncating, which would silently change what the sender said.  Its
+  // size is those two capacities, so the line has to be measured against them
+  // rather than written out: 400 characters overflows the default build and
+  // fits comfortably in a wider one, where this case then tested nothing.
+  const std::size_t capacity =
+      fms::limits::kMaxChannelLength + fms::limits::kMaxMessageLength + 2;
+  const std::string overlong(capacity + 16, 'x');
   Streams              streams(overlong + "\nignition_on\n");
   fms::port::ConsolePort port(/*prompt=*/false);
   REQUIRE(port.open() == fms::Status::Ok);

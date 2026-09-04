@@ -445,6 +445,7 @@ Every push runs the same gates, each answering a question the others cannot.
 | Capacity ABI | a probe built with a changed capacity must fail to link | `ctest` → `abi_guard` |
 | No exceptions, no allocation | read out of the built archives with `nm`, not inferred from the flags | `ctest` → `symbol_check` |
 | Bare metal | `fms_core` and `fms_inspect` compiled for a Cortex-M4 with no OS | `ci.yml` → `cross` |
+| Capacities | the suite built and run at three configurations, not just the defaults | `ci.yml` → `capacities` |
 | Packaging | install it, then build a consumer that knows it only through `find_package` | `ci.yml` → `install` |
 | Deep static analysis | CodeQL (`security-and-quality`) over a real build | `codeql.yml` |
 

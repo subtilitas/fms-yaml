@@ -383,6 +383,7 @@ about linking, and one toolchain proving it is enough.
 | `symbol_check` (ctest) | the archives carry no throw or unwind symbols and no allocator reference, and `fms_config` still carries the unwind machinery |
 | `car_version` (ctest) | the binary reports the version `project()` declared |
 | `install` (CI) | the installed package resolves through `find_package`, and `tests/consumer` links and runs against it |
+| `capacities` (CI) | the whole suite at three capacity configurations, so a case asserts what the code does rather than what the default build has room for |
 
 ## Threading
 
