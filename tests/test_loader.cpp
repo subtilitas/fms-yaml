@@ -26,8 +26,8 @@ constexpr const char* kMinimal = R"(
 fsm:
   name: minimal
 triggers:
-  - {name: throttle, channel: "car/engine/throttle"}
-  - {name: brake,    channel: "car/brakes/pressed"}
+  - {name: throttle, channel: "car/throttle"}
+  - {name: brake,    channel: "car/brake"}
 states:
   - name: standing
     transitions:
@@ -63,7 +63,7 @@ TEST_CASE("channels route back to their trigger") {
   Loaded fixture;
   REQUIRE(fixture.load(kMinimal) == fms::Status::Ok);
 
-  CHECK(fixture.model.find_trigger_for_channel(sv("car/brakes/pressed")) ==
+  CHECK(fixture.model.find_trigger_for_channel(sv("car/brake")) ==
         fixture.model.find_trigger(sv("brake")));
   CHECK(fixture.model.find_trigger_for_channel(sv("car/nothing")) == fms::kNoTrigger);
 }

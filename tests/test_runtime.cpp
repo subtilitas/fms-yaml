@@ -42,7 +42,7 @@ fsm:
   name: car
 triggers:
   - {name: throttle_pressed}
-  - {name: brake_pressed, channel: "car/brakes/pressed"}
+  - {name: brake_pressed, channel: "car/brake"}
   - {name: vehicle_stopped}
 states:
   - name: standing
@@ -117,7 +117,7 @@ TEST_CASE("a trigger without an explicit channel listens on its own name") {
   CHECK(h.model.find_trigger_for_channel(sv("throttle_pressed")) ==
         h.model.find_trigger(sv("throttle_pressed")));
   // ...and one with an explicit channel listens only there.
-  CHECK(h.model.find_trigger_for_channel(sv("car/brakes/pressed")) ==
+  CHECK(h.model.find_trigger_for_channel(sv("car/brake")) ==
         h.model.find_trigger(sv("brake_pressed")));
   CHECK(h.model.find_trigger_for_channel(sv("brake_pressed")) == fms::kNoTrigger);
 }
@@ -129,7 +129,7 @@ TEST_CASE("input on a trigger channel changes the state and publishes it") {
   CHECK(std::strcmp(h.machine.current_name(), "accelerating") == 0);
   CHECK(h.port.last_state() == sv("accelerating"));
 
-  h.deliver("car/brakes/pressed");
+  h.deliver("car/brake");
   CHECK(std::strcmp(h.machine.current_name(), "braking") == 0);
   CHECK(h.port.last_state() == sv("braking"));
 
@@ -143,7 +143,7 @@ TEST_CASE("a trigger the current state does not accept is reported as an error")
   Harness h;
   h.port.clear_history();
 
-  h.deliver("car/brakes/pressed");  // the car is standing
+  h.deliver("car/brake");  // the car is standing
 
   CHECK(std::strcmp(h.machine.current_name(), "standing") == 0);
   CHECK(h.machine.rejection_count() == 1);

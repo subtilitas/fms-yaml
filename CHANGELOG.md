@@ -8,10 +8,20 @@ numbers promise is in [docs/stability.md](docs/stability.md).
 
 ### Added
 
+- `tools/capacity_sweep.sh` and the `capacities` CI job: the suite is built and
+  run at three capacity configurations, including the tuning
+  `docs/architecture.md` gives for the car example. Every other gate builds at
+  the defaults, which is one instantiation of the types the capacities size.
+
 - `Status::FileNotReadable`, for a path that opens and whose first read fails.
 
 ### Fixed
 
+- Eight test cases asserted the default capacity configuration rather than the
+  library: argument lists written out as four pairs, a 400-character line
+  against a buffer sized by two capacities, and whole diagnostic sentences
+  against a message buffer that clips them. They derive from `fms::limits::`
+  now, or skip with a printed reason where a configuration cannot express them.
 - A configuration on a source that cannot be reopened — a FIFO, a socket — was
   parsed from its second byte. The readability check opened the path, read one
   byte and closed it, and yaml-cpp then opened it again; a regular file starts

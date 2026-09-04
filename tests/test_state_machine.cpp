@@ -32,11 +32,11 @@ struct Fixture {
     REQUIRE(model.declare_state(sv("accelerating"), accelerating) == fms::Status::Ok);
     REQUIRE(model.declare_state(sv("braking"), braking) == fms::Status::Ok);
 
-    REQUIRE(model.declare_trigger(sv("throttle"), sv("car/engine/throttle"), throttle) ==
+    REQUIRE(model.declare_trigger(sv("throttle"), sv("car/throttle"), throttle) ==
             fms::Status::Ok);
-    REQUIRE(model.declare_trigger(sv("brake"), sv("car/brakes/pressed"), brake) ==
+    REQUIRE(model.declare_trigger(sv("brake"), sv("car/brake"), brake) ==
             fms::Status::Ok);
-    REQUIRE(model.declare_trigger(sv("stopped"), sv("car/wheels/stopped"), stopped) ==
+    REQUIRE(model.declare_trigger(sv("stopped"), sv("car/stopped"), stopped) ==
             fms::Status::Ok);
 
     REQUIRE(model.add_transition(standing, throttle, accelerating) == fms::Status::Ok);

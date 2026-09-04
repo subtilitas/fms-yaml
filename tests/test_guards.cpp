@@ -9,6 +9,7 @@
 
 #include "fms/port/memory_port.hpp"
 #include "fms/runtime.hpp"
+#include "fms/limits.hpp"
 #include "fms/yaml_loader.hpp"
 
 namespace {
@@ -70,6 +71,18 @@ struct Harness {
 
 }  // namespace
 
+/// A message equal to `expected`, or to as much of it as this build's
+/// FMS_MAX_MESSAGE_LENGTH can hold.  Comparing against the whole sentence made
+/// this an assertion about the default message capacity rather than about what
+/// the runtime reports.
+bool reports(fms::StringView actual, const char* expected) {
+  const std::size_t full = std::strlen(expected);
+  const std::size_t want = (full < fms::limits::kMaxMessageLength)
+                               ? full
+                               : fms::limits::kMaxMessageLength;
+  return actual.size() == want && std::strncmp(actual.data(), expected, want) == 0;
+}
+
 TEST_CASE("the first alternative whose guard holds is taken") {
   Harness h;
   h.deliver("self_test_passed", "errors=0");
@@ -100,8 +113,8 @@ TEST_CASE("with no fallback, a failing guard is a rejection") {
   CHECK(h.machine.rejection_count() == 1);
   CHECK(h.port.states().empty());
   // The report says which guard failed and with what, which is the useful part.
-  CHECK(h.port.last_error_message() ==
-        sv("rejected: throttle_pressed in state standing: no guard matched (pedal=3)"));
+  CHECK(reports(h.port.last_error_message(),
+                "rejected: throttle_pressed in state standing: no guard matched (pedal=3)"));
 
   h.deliver("throttle_pressed", "pedal=40");
   CHECK(std::strcmp(h.machine.current_name(), "accelerating") == 0);
