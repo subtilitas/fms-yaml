@@ -6,7 +6,8 @@ coverage claim they add up to, and the limits of it.
 
 ## The suite in this repository
 
-`ctest` registers seven cases:
+`ctest` registers up to seven cases. How many depends on the build, and the
+conditions are in the sections below the table:
 
 | Case | What it proves |
 |---|---|
@@ -18,11 +19,28 @@ coverage claim they add up to, and the limits of it.
 | `car_config_check` | the shipped YAML loaded and linted by the real binary |
 | `car_diagram_check` | the diagram in the README regenerated from the example and compared |
 
-Three of them — `abi_guard`, `symbol_check` and `car_diagram_check` — run a
-script under `tools/`, which the source distribution does not carry. Their
-registration is guarded on the script existing, so a build from a release
-tarball registers four cases and not seven. That is the package, not a failure;
-a test that fails because its own file is missing tests nothing.
+Three of them run a script under `tools/`, and each is registered only when the
+build can actually run it. A test that fails because its own file is missing, or
+because the build it is in cannot express what it checks, tests nothing.
+
+| Case | Registered when |
+|---|---|
+| `abi_guard` | GCC or Clang, not MSVC, not a coverage or sanitizer build, and `tools/abi_guard_check.sh` present |
+| `symbol_check` | the same conditions, with `tools/symbol_check.sh` present |
+| `car_diagram_check` | `FMS_BUILD_INSPECT`, `tools/diagram_sync.py` present, and Python 3 found |
+
+`abi_guard` and `symbol_check` read the built archives, which instrumentation
+rewrites, so a coverage or sanitizer build cannot answer the question they ask.
+
+Measured on this tree:
+
+| Build | Cases |
+|---|---:|
+| default Release, GCC, `tools/` present | 7 |
+| coverage (`tools/coverage.sh`) | 5 |
+| from the release archive, which carries no `tools/` | 4 |
+
+Four from the archive is the package, not a short run.
 
 ## Coverage
 
