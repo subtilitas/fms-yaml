@@ -133,15 +133,20 @@ What it does not reach:
 
 Every other gate builds against the pinned ETL. A consumer supplying its own
 takes the `find_package(etl REQUIRED)` branch and may bring another version, so
-`tools/etl_range_check.sh` builds and tests against eight: 20.39.0, 20.39.4 (the
-pin), 20.40.0, 20.40.1, 20.41.0, 20.43.0, 20.44.0 and 20.46.0.
+`tools/etl_range_check.sh` builds and tests against nine: 20.39.0, 20.39.4 (the
+pin), 20.40.0, 20.40.1, 20.41.0, 20.43.0, 20.44.0, 20.46.0 and 20.48.1.
 
-All eight compile clean under `-Werror` and pass the full suite; the interface
+20.48.1 is there because it is another ETL-based library's pin, not because
+anything here wants it. Two libraries that both fetch ETL into one binary
+compile against whichever of them declared it first, so a composed build can put
+this library on a version it did not choose.
+
+All nine compile clean under `-Werror` and pass the full suite; the interface
 is stable across them. What is not stable is size. Between the `20.40.0` and
 `20.40.1` tags `etl::vector` lost 8 bytes per instance, which reaches the `fms`
 types that hold ETL containers by value:
 
-| | 20.39.0 – 20.40.0 | 20.40.1 – 20.46.0 |
+| | 20.39.0 – 20.40.0 | 20.40.1 – 20.48.1 |
 |---|---:|---:|
 | `etl::vector<int,8>` | 64 | 56 |
 | `fms::Model` | 49 728 | 47 376 |
@@ -165,7 +170,9 @@ constraint that would enforce it.
 One tag reports a version that is not its own: `20.40.1` ships an
 `etl/version.h` reading `20.41.1`. `find_package` compares the header, so a
 constraint of `20.41.0` or above accepts that tag. `tools/etl_range_check.sh`
-prints both when they differ.
+reports both in every row, because the version the build compiled against is the
+header's and the version the matrix leg is named for is the tag's. The table
+above is by tag; the one the job prints carries each.
 
 There is no ETL 21.x. The newest tag is 20.48.1, so a version range with an
 upper bound of 21.0.0 is a claim about code that does not exist — and because
