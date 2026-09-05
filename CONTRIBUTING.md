@@ -42,6 +42,7 @@ tree rather than by the reporting service.
 | a test that names a capacity | derive it from `fms::limits::` rather than writing the number out, or skip the case with a printed reason where the configuration cannot express it; `tools/capacity_sweep.sh` is what notices |
 | `examples/car/car.machine.yaml` | `python3 tools/diagram_sync.py --write` to redraw the README diagram |
 | a public header | check the table in [docs/stability.md](docs/stability.md) still matches |
+| anything that changes a type's size — a capacity default, a field, the ETL pin | the sizes quoted in `docs/architecture.md`, `include/fms/abi.hpp` and `tools/abi_guard_check.sh`; `doc_figures` fails until they match, and names each one |
 | anything user-visible | add a line to [CHANGELOG.md](CHANGELOG.md) under Unreleased |
 | the version | only `project()` in `CMakeLists.txt`; `fms/version.hpp` is generated from it |
 | the pinned ETL version in `FetchContent_Declare(etl)` | update `ETL_VERSION` in `tools/install_check.sh` to match, and add the new pin to the `etl-range` matrix in `.github/workflows/ci.yml`; `tools/etl_range_check.sh --check` fails until the matrix lists it |

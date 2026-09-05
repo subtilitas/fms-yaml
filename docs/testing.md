@@ -6,7 +6,7 @@ coverage claim they add up to, and the limits of it.
 
 ## The suite in this repository
 
-`ctest` registers up to seven cases. How many depends on the build, and the
+`ctest` registers up to eight cases. How many depends on the build, and the
 conditions are in the sections below the table:
 
 | Case | What it proves |
@@ -14,6 +14,7 @@ conditions are in the sections below the table:
 | `fms_tests` | the doctest suites over `src/` and `include/fms/`, including the no-allocation proof |
 | `abi_guard` | a translation unit built with a different capacity fails to link, rather than silently disagreeing about a layout |
 | `symbol_check` | no exceptions and no allocation, read out of the built archives with `nm` rather than inferred from the flags |
+| `doc_figures` | the type sizes the documentation quotes, measured and compared against this build |
 | `car_console_pipe` | a scripted console session against the example binary, compared to `tests/car_session.expected` |
 | `car_version` | the binary reports the version `project()` declares |
 | `car_config_check` | the shipped YAML loaded and linted by the real binary |
@@ -28,15 +29,18 @@ because the build it is in cannot express what it checks, tests nothing.
 | `abi_guard` | GCC or Clang, not MSVC, not a coverage or sanitizer build, and `tools/abi_guard_check.sh` present |
 | `symbol_check` | the same conditions, with `tools/symbol_check.sh` present |
 | `car_diagram_check` | `FMS_BUILD_INSPECT`, `tools/diagram_sync.py` present, and Python 3 found |
+| `doc_figures` | the same conditions as `abi_guard`, with `tools/doc_figures_check.py` present, Python 3 found, and an x86-64 target |
 
 `abi_guard` and `symbol_check` read the built archives, which instrumentation
 rewrites, so a coverage or sanitizer build cannot answer the question they ask.
+`doc_figures` needs the same `abi_probe.env` those two read, and the sizes it
+compares are the ones `docs/architecture.md` states for x86-64.
 
 Measured on this tree:
 
 | Build | Cases |
 |---|---:|
-| default Release, GCC, `tools/` present | 7 |
+| default Release, GCC, `tools/` present, x86-64 | 8 |
 | coverage (`tools/coverage.sh`) | 5 |
 | from the release archive, which carries no `tools/` | 4 |
 
