@@ -129,6 +129,49 @@ What it does not reach:
   implements by relabelling a copy of it, which is not the same as installing a
   real 1.1 and asking a 1.0 consumer.
 
+## ETL versions
+
+Every other gate builds against the pinned ETL. A consumer supplying its own
+takes the `find_package(etl REQUIRED)` branch and may bring another version, so
+`tools/etl_range_check.sh` builds and tests against eight: 20.39.0, 20.39.4 (the
+pin), 20.40.0, 20.40.1, 20.41.0, 20.43.0, 20.44.0 and 20.46.0.
+
+All eight compile clean under `-Werror` and pass the full suite; the interface
+is stable across them. What is not stable is size. Between the `20.40.0` and
+`20.40.1` tags `etl::vector` lost 8 bytes per instance, which reaches the `fms`
+types that hold ETL containers by value:
+
+| | 20.39.0 – 20.40.0 | 20.40.1 – 20.46.0 |
+|---|---:|---:|
+| `etl::vector<int,8>` | 64 | 56 |
+| `fms::Model` | 49 728 | 47 376 |
+| `fms::Args` | 464 | 456 |
+| `fms::Runtime` | 688 | 680 |
+| `fms::Setup` | 576 | 576 |
+
+The job records these rather than asserting them, because no binary
+compatibility is promised in either direction. Two versions below the boundary
+stay in the matrix so that it keeps being measured: a matrix covering one side
+only would not notice the next such change.
+
+The ABI guard in `fms/abi.hpp` does not cover this. Its tag is built from the
+`FMS_MAX_*` capacities alone, so two translation units compiled against ETL
+either side of the boundary carry the same tag, disagree about
+`sizeof(fms::Model)` by 2 352 bytes, and link without a diagnostic. Building
+the library and its consumer against one ETL version is the reader's
+responsibility, and `find_package(etl REQUIRED)` in `CMakeLists.txt` states no
+constraint that would enforce it.
+
+One tag reports a version that is not its own: `20.40.1` ships an
+`etl/version.h` reading `20.41.1`. `find_package` compares the header, so a
+constraint of `20.41.0` or above accepts that tag. `tools/etl_range_check.sh`
+prints both when they differ.
+
+There is no ETL 21.x. The newest tag is 20.48.1, so a version range with an
+upper bound of 21.0.0 is a claim about code that does not exist — and because
+ETL's package is `SameMajorVersion`, `find_package(etl 20.39.0...21.0.0)` is
+refused by every ETL that does. Excluding the endpoint needs `...<21.0.0`.
+
 ## Verifying a release
 
 A release is verified from its published archive, not from the tree that
@@ -155,8 +198,10 @@ business alone, so `v1.0.0-rc2` is compared as `1.0.0`.
 - Any compiler other than GCC 13, Clang 18 and MSVC 2022.
 - The ARM build is compiled and never run. There is no hardware in the loop and
   no emulator.
-- A dependency version other than the pinned ETL 20.39.4 and yaml-cpp 0.8.0.
-  A newer one may work and is not tested.
+- A yaml-cpp or doctest version other than the pinned 0.8.0 and 2.4.11. A newer
+  one may work and is not tested. ETL is the exception: the `etl-range` job
+  builds and tests against the eight versions listed under
+  [ETL versions](#etl-versions) above.
 - Concurrent use. The library is single threaded by design, which
   [architecture.md](architecture.md#threading) states; no test drives one
   `Runtime` from two threads, because doing so is outside what the design

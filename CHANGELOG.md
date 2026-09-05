@@ -30,6 +30,22 @@ numbers promise is in [docs/stability.md](docs/stability.md).
   the library was built against. The link error names the consumer's numbers;
   this is the other half of the comparison.
 
+- `tools/etl_range_check.sh` and the `etl-range` CI matrix: the library is built
+  and tested against eight ETL versions through `find_package`, which is the
+  path a consumer supplying its own ETL takes. ETL moved `sizeof(etl::vector)`
+  by 8 bytes between the `20.40.0` and `20.40.1` tags with no interface change,
+  so `fms::Model` is 49 728 bytes below that boundary and 47 376 above it while
+  every version compiles clean and passes. Two versions below the boundary stay
+  in the matrix so it keeps being measured. Sizes are recorded in the step
+  summary, not asserted: `docs/stability.md` promises no binary compatibility in
+  either direction. Each leg asserts that `find_package` resolved the ETL it was
+  given, because `FMS_FETCH_DEPS` defaults to on and a leg that quietly falls
+  back to the pin tests the pin eight times.
+
+- `tools/etl_range_check.sh --check` fails when the `etl-range` matrix stops
+  listing the pinned ETL version, which would leave the matrix testing a range
+  the project does not itself build at.
+
 ## [1.0.0] - 2026-09-04
 
 Released from `v1.0.0-rc1` and `v1.0.0-rc2`. Neither candidate nor this release
