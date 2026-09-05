@@ -8,6 +8,13 @@ numbers promise is in [docs/stability.md](docs/stability.md).
 
 ### Added
 
+- `tools/etl_latest_check.sh` and the weekly `Supply chain` workflow: the pinned
+  ETL is compared against what ETL has published, and one issue is opened and
+  kept updated when it falls behind. It reports rather than bumps — a pin
+  crossing ETL's 20.40.1 layout boundary changes the sizes the documentation
+  quotes, so moving it is a decision. The pin is 20.39.4 and ETL is already
+  ahead of it; the issue carries how far.
+
 - `tools/doc_figures_check.py` and the `doc_figures` test: the type sizes
   `docs/architecture.md` quotes, and the pair `include/fms/abi.hpp` and
   `tools/abi_guard_check.sh` repeat in their comments, are measured and compared
