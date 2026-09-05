@@ -58,7 +58,9 @@ fi
 # How far behind, not only that it is behind: a pin one patch back and a pin two
 # years back are different decisions.
 newer="$(sort -V <<< "${tags}" | sed -n "/^${pin}\$/,\$p" | tail -n +2)"
-count="$(wc -l <<< "${newer}")"
+# Trimmed: wc pads its count with spaces on some systems, and this one is
+# printed to a person.
+count="$(wc -l <<< "${newer}" | tr -d "[:space:]")"
 
 echo "etl_latest: ETL ${pin} is pinned and ${newest} is the newest tag"
 echo "etl_latest: ${count} newer, most recent first:"

@@ -9,9 +9,9 @@
 # decision: this opens an issue and changes nothing.
 #
 # It runs on a schedule rather than on push, because the answer changes when ETL
-# publishes rather than when this repository does.  It never fails the run - a
-# dependency being ahead is news, not a broken build - so a real error and a
-# newer version are told apart by the script's exit status.
+# publishes rather than when this repository does.  A dependency being ahead is
+# news and does not fail the run; a check that could not answer does, because a
+# watch that quietly stopped watching is worse than no watch.
 name: Supply chain
 
 on:
@@ -51,7 +51,9 @@ jobs:
           exit 1
 
       # One issue, reopened and updated rather than a new one every week: a
-      # weekly duplicate is a notification people learn to skip.
+      # weekly duplicate is a notification people learn to skip.  Closed ones
+      # count, and are reopened - closing the issue does not make the pin newer,
+      # and searching only open ones would file a fresh duplicate instead.
       - name: Open or update the issue
         if: steps.compare.outputs.status == '2'
         env:
@@ -62,13 +64,19 @@ jobs:
             "$(cat report.txt)" \
             'The pin is GIT_TAG in FetchContent_Declare(etl) in CMakeLists.txt, and ETL_VERSION in tools/install_check.sh must match it. A new pin also goes in the etl-range matrix in .github/workflows/ci.yml, which tools/etl_range_check.sh --check enforces. Moving it is a decision, not a formality: ETL changed the layout of its containers between the 20.40.0 and 20.40.1 tags, so a bump across that boundary changes the sizes docs/architecture.md quotes, which tools/doc_figures_check.py will report.')"
 
-          existing="$(gh issue list --state open --search "$TITLE in:title" \
-                      --json number,title \
-                      --jq ".[] | select(.title == \"$TITLE\") | .number" | head -1)"
+          existing="$(gh issue list --state all --search "$TITLE in:title" \
+                      --json number,title,state \
+                      --jq ".[] | select(.title == \"$TITLE\") | \"\(.number) \(.state)\"" \
+                      | head -1)"
 
           if [ -n "${existing}" ]; then
-            gh issue edit "${existing}" --body "${body}"
-            echo "updated issue #${existing}"
+            number="${existing%% *}"
+            state="${existing##* }"
+            if [ "${state}" = "CLOSED" ]; then
+              gh issue reopen "${number}"
+            fi
+            gh issue edit "${number}" --body "${body}"
+            echo "updated issue #${number} (was ${state})"
           else
             gh issue create --title "$TITLE" --body "${body}"
           fi
