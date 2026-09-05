@@ -13,6 +13,16 @@ include(CMakeFindDependencyMacro)
 # dependency fetched into the build tree is not something the build can hand on.
 find_dependency(etl)
 
+# ETL decides part of the layout of Model, Setup, Args and Runtime, and neither
+# find_dependency above nor find_package(etl) in the library's own build states
+# a version - deliberately, because two ETL versions that lay those containers
+# out identically are interchangeable and refusing them would be a false alarm.
+# What is not interchangeable fails at link time instead, on an unresolved
+# fms::abi::etl_pin<...> naming this consumer's numbers.  This is what the
+# library was built against, so that the other half of that comparison is not
+# something to go looking for.
+set(fms_yaml_ETL_VERSION "@FMS_ETL_VERSION@")
+
 if(@FMS_INSTALLED_CONFIG@)
   # yaml-cpp is PRIVATE to fms_config, but fms_config is a static library, so it
   # is still a link-time requirement of anything that uses the loader.

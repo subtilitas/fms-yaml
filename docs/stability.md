@@ -51,13 +51,22 @@ configuration.
 
 ## What is not covered
 
-* **Binary compatibility.** There is none, in either direction. The capacities
-  in `limits.hpp` are template arguments of the containers inside `Model`,
-  `Setup`, `Args`, `Runtime` and `lint::Report`, so two builds of the same
-  version with different capacities are different layouts. The library is
-  distributed as source for that reason, and `fms/abi.hpp` makes a mismatch a
-  link error — see
+* **Binary compatibility.** There is none, in either direction. Two things
+  decide the layout of `Model`, `Setup`, `Args`, `Runtime` and `lint::Report`:
+  the capacities in `limits.hpp`, which are template arguments of the containers
+  inside them, and ETL, which decides what those containers cost. ETL moved
+  `sizeof(etl::vector)` by 8 bytes between its 20.40.0 and 20.40.1 tags with no
+  interface change, taking `sizeof(fms::Model)` from 49 728 to 47 376. The
+  library is distributed as source for both reasons, and `fms/abi.hpp` makes
+  either mismatch a link error — see
   [the capacity guard](architecture.md#the-capacity-guard).
+
+  Neither `find_package(etl)` in the build nor `find_dependency(etl)` in the
+  exported package states a version, because two ETL versions that lay those
+  containers out identically are interchangeable and refusing them would be a
+  false alarm. One that does not is an unresolved `fms::abi::etl_pin<...>`
+  naming the consumer's numbers; `fms_yaml_ETL_VERSION` in the installed
+  package config is what the library was built against.
 * **The numeric values of `Status` and `lint::Check`.** The enumerators are
   named and their `to_string()` slugs are stable; the underlying numbers are
   not, and a new enumerator may be inserted anywhere. Switch on the names,

@@ -198,6 +198,43 @@ else()
 endif()
 fms_make_dependency_system(etl::etl)
 
+# Which ETL this build compiled against, recorded so the exported package can
+# name it.  ETL decides part of the layout of Model, Setup, Args and Runtime -
+# it moved sizeof(etl::vector) by 8 bytes between its 20.40.0 and 20.40.1 tags -
+# and fms/abi.hpp turns a consumer that disagrees into a link error.  That error
+# names the consumer's numbers; this is the other half of the diagnosis.
+#
+# find_package sets etl_VERSION.  FetchContent adds ETL as a subdirectory, whose
+# project() call sets it in that scope and not this one, so the header is read
+# instead - one source rather than the tag written out a second time.
+if(DEFINED etl_VERSION AND etl_VERSION)
+  set(FMS_ETL_VERSION "${etl_VERSION}")
+elseif(DEFINED etl_SOURCE_DIR AND EXISTS "${etl_SOURCE_DIR}/include/etl/version.h")
+  file(STRINGS "${etl_SOURCE_DIR}/include/etl/version.h" _fms_etl_version_lines
+       REGEX "^#define ETL_VERSION_(MAJOR|MINOR|PATCH) ")
+  set(FMS_ETL_VERSION "")
+  foreach(_part MAJOR MINOR PATCH)
+    foreach(_line IN LISTS _fms_etl_version_lines)
+      if(_line MATCHES "^#define ETL_VERSION_${_part} ([0-9]+)")
+        if(FMS_ETL_VERSION)
+          set(FMS_ETL_VERSION "${FMS_ETL_VERSION}.${CMAKE_MATCH_1}")
+        else()
+          set(FMS_ETL_VERSION "${CMAKE_MATCH_1}")
+        endif()
+      endif()
+    endforeach()
+  endforeach()
+  unset(_fms_etl_version_lines)
+  unset(_part)
+  unset(_line)
+endif()
+if(NOT FMS_ETL_VERSION)
+  # Said rather than left blank: a consumer reading an empty string cannot tell
+  # a missing value from a version nobody recorded.
+  set(FMS_ETL_VERSION "unknown")
+endif()
+message(STATUS "fms-yaml: ETL ${FMS_ETL_VERSION}")
+
 # --- yaml-cpp ---------------------------------------------------------------
 # Only fms_config uses it, so a build without the loader neither fetches nor
 # looks for it - which is the difference between cross-compiling and not.

@@ -11,7 +11,7 @@
 #
 #   tools/abi_guard_check.sh [build-dir]      # default: build
 #
-# Three checks:
+# Five checks:
 #   1. every FMS_MAX_* in limits.hpp is named on a line that builds the tag
 #   2. a probe built with the library's capacities links, and runs
 #   3. the tag that probe reports has one field per capacity - being named is
@@ -19,6 +19,12 @@
 #      join chain satisfies check 1 while carrying nothing into the symbol
 #   4. a probe built with one capacity changed does not link, and says so by
 #      naming the symbol it could not resolve
+#   5. the types a caller allocates really reference the ETL layout guard, and
+#      a probe naming a different layout does not link.
+#      The capacities are not the only thing that decides these layouts: ETL
+#      moved sizeof(etl::vector) by 8 bytes between its 20.40.0 and 20.40.1
+#      tags, and a consumer whose ETL differs from the library's is the same
+#      class of mismatch as a consumer differing in a capacity
 #
 # The changed capacity is derived from what the probe reports, not written down
 # here, so the gate holds for a tree configured with -DFMS_MAX_STATES=8 as well
@@ -98,7 +104,9 @@ int main() {
   if (model.state_count() != 0 || setup.name().size() != 0) {
     return 1;
   }
-  std::printf("%zu %s\n", fms::limits::kMaxStates, fms::abi::tag());
+  std::printf("%zu %s %zu %zu %zu\n", fms::limits::kMaxStates, fms::abi::tag(),
+              fms::abi::etl_layout::vector, fms::abi::etl_layout::flat_map,
+              fms::abi::etl_layout::string);
   return 0;
 }
 CPP
@@ -130,7 +138,7 @@ if ! build_probe "${work}/match.log" "${capacities[@]}"; then
   cat "${work}/match.log" >&2
   exit 1
 fi
-read -r states tag < <("${work}/probe")
+read -r states tag layout_vector layout_flat_map layout_string < <("${work}/probe")
 
 # --- 3. the tag carries one field per capacity -------------------------------
 # Check 1 reads the source; this reads the symbol the compiler actually built.
@@ -170,5 +178,61 @@ if ! grep -q "fms_abi_${other}_" "${work}/mismatch.log"; then
   exit 1
 fi
 
+# --- 5a. constructing the types must reference the ETL guard -----------------
+# Checks 4 and 5b prove the mechanism; neither proves it is reached.  With the
+# etl_pin_here::pin() call taken out of fms::abi::pin(), a mismatched ETL links
+# silently again and both of those still pass - the capacity half is covered by
+# check 4, which fails if FMS_ABI_SYMBOL is not called, and this is the ETL
+# half's equivalent.  The probe constructs Model and Setup, so its object must
+# carry the guard as an undefined symbol.
+if ! "${cxx}" -std=c++17 -O2 -fno-exceptions -DETL_LOG_ERRORS \
+     -I"${fms_include}" "${isystem[@]}" "${capacities[@]}" \
+     -c "${work}/probe.cpp" -o "${work}/probe.o" > "${work}/probe-object.log" 2>&1; then
+  echo "abi_guard: the probe did not compile to an object" >&2
+  cat "${work}/probe-object.log" >&2
+  exit 1
+fi
+if ! nm -C "${work}/probe.o" | grep -q 'U .*fms::abi::etl_pin<'; then
+  echo "abi_guard: constructing Model and Setup does not reference the ETL" >&2
+  echo "           layout guard.  fms::abi::pin() is where it is called from;" >&2
+  echo "           without that call an ETL whose containers are laid out" >&2
+  echo "           differently links silently." >&2
+  exit 1
+fi
+
+# --- 5b. a different ETL container layout must not link ----------------------
+# The numbers come from the probe that just ran, so this is the layout the
+# library was actually built with rather than one written down here.  One byte
+# different in the vector is a stand-in for the real case, which is an ETL whose
+# containers are laid out differently - the same undefined reference either way.
+other_vector=$((layout_vector + 1))
+cat > "${work}/etl_probe.cpp" <<CPP
+#include <fms/abi.hpp>
+
+// Naming the specialisation is the point.  fms_core defines exactly one, for
+// the layout its own ETL produced, so any other set of numbers is unresolved.
+int main() {
+  fms::abi::etl_pin<${other_vector}, ${layout_flat_map}, ${layout_string}>::pin();
+  return 0;
+}
+CPP
+
+if "${cxx}" -std=c++17 -O2 -fno-exceptions -DETL_LOG_ERRORS \
+     -I"${fms_include}" "${isystem[@]}" "${capacities[@]}" \
+     "${work}/etl_probe.cpp" "${fms_core_lib}" -o "${work}/etl_probe" \
+     > "${work}/etl_mismatch.log" 2>&1; then
+  echo "abi_guard: a probe naming ETL container layout ${other_vector} linked" >&2
+  echo "           against a library built with ${layout_vector}." >&2
+  echo "           An ETL whose containers differ would link the same way." >&2
+  exit 1
+fi
+if ! grep -q "etl_pin<${other_vector}" "${work}/etl_mismatch.log"; then
+  echo "abi_guard: the ETL-layout probe failed, but not on the layout guard." >&2
+  echo "           Expected an unresolved fms::abi::etl_pin<${other_vector}, ...>:" >&2
+  cat "${work}/etl_mismatch.log" >&2
+  exit 1
+fi
+
 echo "abi_guard: ok - ${declared_count} capacities, all in tag ${tag};" \
-     "matching links, FMS_MAX_STATES=${other} does not"
+     "matching links, FMS_MAX_STATES=${other} does not;" \
+     "ETL layout ${layout_vector}/${layout_flat_map}/${layout_string} pinned"

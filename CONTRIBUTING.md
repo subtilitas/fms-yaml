@@ -38,6 +38,7 @@ tree rather than by the reporting service.
 | If you change | Also |
 |---|---|
 | a capacity in `include/fms/limits.hpp` | add it to the tag in `include/fms/abi.hpp` and to the list in `tests/test_abi.cpp`; `abi_guard` fails until you do |
+| an ETL container that appears in `Model`, `Setup`, `Args` or `Runtime` | add its size to `fms::abi::etl_layout` in `include/fms/abi.hpp`, so a consumer whose ETL lays it out differently fails to link rather than silently |
 | a test that names a capacity | derive it from `fms::limits::` rather than writing the number out, or skip the case with a printed reason where the configuration cannot express it; `tools/capacity_sweep.sh` is what notices |
 | `examples/car/car.machine.yaml` | `python3 tools/diagram_sync.py --write` to redraw the README diagram |
 | a public header | check the table in [docs/stability.md](docs/stability.md) still matches |
