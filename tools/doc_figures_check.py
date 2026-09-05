@@ -16,10 +16,10 @@ makes.
 The figures are measured, never listed here.  A gate holding its own copy of
 the numbers is one more place for them to be wrong.
 
-The figures describe the pinned ETL, so a build against any other one skips
-with its reason printed rather than asserting numbers that are legitimately
-different: the etl-range matrix builds eight versions on purpose, and only the
-leg at the pin is the configuration the pages describe.
+The figures above describe the pinned ETL, so a build against any other one
+checks the boundary table and stops there, saying which of the two it did: the
+etl-range matrix builds eight other versions on purpose, and the numbers for the
+pin are legitimately different in those.
 
 docs/testing.md's ETL boundary table is checked whichever ETL this build uses,
 because each of its columns belongs to one side of that boundary and every build
@@ -251,12 +251,14 @@ def main() -> int:
 
     pinned, measured_etl = etl_versions(env)
 
+    # The tuned probe is only read by the pinned-ETL checks below, and every
+    # etl-range leg would otherwise compile and run it to throw it away.
+    at_the_pin = not (pinned and measured_etl and pinned != measured_etl)
     with tempfile.TemporaryDirectory() as tmp:
         work = pathlib.Path(tmp)
-        sizes = {
-            "default": measure(env, work, []),
-            "tuned": measure(env, work, TUNED),
-        }
+        sizes = {"default": measure(env, work, [])}
+        if at_the_pin:
+            sizes["tuned"] = measure(env, work, TUNED)
 
     failures = []
 
@@ -269,7 +271,7 @@ def main() -> int:
     # Everything below describes the pinned ETL at the default capacities.  A
     # build against another ETL is not that build, so it reports what it did
     # check and stops rather than asserting numbers that differ by design.
-    if pinned and measured_etl and pinned != measured_etl:
+    if not at_the_pin:
         if failures:
             for failure in failures:
                 print(f"doc_figures: {failure}", file=sys.stderr)
