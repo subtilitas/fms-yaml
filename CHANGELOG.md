@@ -8,6 +8,14 @@ numbers promise is in [docs/stability.md](docs/stability.md).
 
 ### Added
 
+- `tools/doc_figures_check.py` and the `doc_figures` test: the type sizes
+  `docs/architecture.md` quotes, and the pair `include/fms/abi.hpp` and
+  `tools/abi_guard_check.sh` repeat in their comments, are measured and compared
+  against the build. They were correct for the pinned ETL at the default
+  capacities and nothing checked them, so moving the pin above ETL 20.40.1 would
+  have left every one of them describing a build nobody makes. The figures are
+  measured, never listed in the gate.
+
 - ETL 20.48.1 in the `etl-range` matrix. It is another ETL-based library's pin,
   and two libraries that both fetch ETL into one binary compile against
   whichever declared it first, so a composed build can put this library on a

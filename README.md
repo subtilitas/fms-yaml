@@ -444,6 +444,7 @@ What they add up to, and what is not covered, is in
 | Runtime analysis | ASan + UBSan over the test suite | `sanitizers.yml` |
 | Configuration | the shipped YAML loaded and linted by the real binary | `ctest` → `car_config_check` |
 | Documentation | the README's diagram regenerated and compared | `ctest` → `car_diagram_check` |
+| Documentation | the type sizes the pages quote, measured against the build | `ctest` → `doc_figures` |
 | Capacity ABI | a probe built with a changed capacity must fail to link | `ctest` → `abi_guard` |
 | No exceptions, no allocation | read out of the built archives with `nm`, not inferred from the flags | `ctest` → `symbol_check` |
 | Bare metal | `fms_core` and `fms_inspect` compiled for a Cortex-M4 with no OS | `ci.yml` → `cross` |

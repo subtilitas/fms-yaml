@@ -523,6 +523,27 @@ FMS_CAPACITY_FLAGS=\"${fms_capacity_flags}\"
       COMMAND bash ${CMAKE_CURRENT_SOURCE_DIR}/tools/abi_guard_check.sh
               ${CMAKE_BINARY_DIR})
     set_tests_properties(abi_guard PROPERTIES DEPENDS fms_tests)
+
+    # The same abi_probe.env, read for the compiler and ETL's headers: this
+    # gate measures the type sizes the documentation quotes rather than
+    # linking anything.  Registered under the same conditions because that is
+    # what writes the file, plus Python and x86-64 - the pages say x86-64 and
+    # the numbers are ABI-specific, so on another machine the comparison would
+    # be testing the machine.
+    find_package(Python3 COMPONENTS Interpreter QUIET)
+    if(Python3_FOUND
+       AND CMAKE_SYSTEM_PROCESSOR MATCHES "^(x86_64|AMD64)$"
+       AND EXISTS ${CMAKE_CURRENT_SOURCE_DIR}/tools/doc_figures_check.py)
+      add_test(NAME doc_figures
+        COMMAND ${Python3_EXECUTABLE}
+                ${CMAKE_CURRENT_SOURCE_DIR}/tools/doc_figures_check.py
+                ${CMAKE_BINARY_DIR})
+      # The documented figures are for the pinned ETL.  The etl-range matrix
+      # builds seven other versions on purpose, where those numbers differ by
+      # design, so the gate reports skipped there rather than failing - and
+      # reports it, rather than passing having compared nothing.
+      set_tests_properties(doc_figures PROPERTIES SKIP_RETURN_CODE 77)
+    endif()
   endif()
 
   # ---------------------------------------------------------------------------
