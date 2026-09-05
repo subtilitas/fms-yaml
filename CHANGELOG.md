@@ -6,6 +6,14 @@ numbers promise is in [docs/stability.md](docs/stability.md).
 
 ## Unreleased
 
+### Added
+
+- ETL 20.48.1 in the `etl-range` matrix. It is another ETL-based library's pin,
+  and two libraries that both fetch ETL into one binary compile against
+  whichever declared it first, so a composed build can put this library on a
+  version it did not choose. 7 of 7, and its container sizes are the ones every
+  version from 20.40.1 up reports.
+
 ## [1.0.1] - 2026-09-05
 
 A build that was already wrong now fails to build. If a consumer's ETL lays out

@@ -295,6 +295,11 @@ jobs:
   # where sizeof(etl::vector) lost 8 bytes with no interface change, and a
   # matrix covering only one side of it would stop measuring the boundary.
   #
+  # 20.48.1 is another project's pin rather than a version of interest here.
+  # Two libraries that both FetchContent ETL into one binary get whichever
+  # declared it first, so a composed build can compile this one against a pin it
+  # does not choose - which is a version to have run the suite on.
+  #
   # Sizes are recorded, not asserted.  docs/stability.md promises no binary
   # compatibility in either direction, so a layout that moves is news rather
   # than a failure - but it is never silent.
@@ -317,7 +322,7 @@ jobs:
       fail-fast: false
       matrix:
         etl: ['20.39.0', '20.39.4', '20.40.0', '20.40.1',
-              '20.41.0', '20.43.0', '20.44.0', '20.46.0']
+              '20.41.0', '20.43.0', '20.44.0', '20.46.0', '20.48.1']
     steps:
       - uses: actions/checkout@v7
 

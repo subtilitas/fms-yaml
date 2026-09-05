@@ -133,15 +133,20 @@ What it does not reach:
 
 Every other gate builds against the pinned ETL. A consumer supplying its own
 takes the `find_package(etl REQUIRED)` branch and may bring another version, so
-`tools/etl_range_check.sh` builds and tests against eight: 20.39.0, 20.39.4 (the
-pin), 20.40.0, 20.40.1, 20.41.0, 20.43.0, 20.44.0 and 20.46.0.
+`tools/etl_range_check.sh` builds and tests against nine: 20.39.0, 20.39.4 (the
+pin), 20.40.0, 20.40.1, 20.41.0, 20.43.0, 20.44.0, 20.46.0 and 20.48.1.
+
+20.48.1 is there because it is another ETL-based library's pin, not because
+anything here wants it. Two libraries that both fetch ETL into one binary
+compile against whichever of them declared it first, so a composed build can put
+this library on a version it did not choose.
 
 All eight compile clean under `-Werror` and pass the full suite; the interface
 is stable across them. What is not stable is size. Between the `20.40.0` and
 `20.40.1` tags `etl::vector` lost 8 bytes per instance, which reaches the `fms`
 types that hold ETL containers by value:
 
-| | 20.39.0 – 20.40.0 | 20.40.1 – 20.46.0 |
+| | 20.39.0 – 20.40.0 | 20.40.1 – 20.48.1 |
 |---|---:|---:|
 | `etl::vector<int,8>` | 64 | 56 |
 | `fms::Model` | 49 728 | 47 376 |
