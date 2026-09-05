@@ -350,16 +350,49 @@ something has to be constructed. `lint::Report` needs no hook. It is
 of `analyse()`, `has_errors()` and `describe()`, and a caller that disagrees
 fails on those instead.
 
+### ETL is the other half of the layout
+
+The capacities are not the only thing that decides these layouts. ETL decides
+what the containers themselves cost: `sizeof(etl::vector)` lost 8 bytes between
+its 20.40.0 and 20.40.1 tags with no interface change, which took
+`sizeof(fms::Model)` from 49 728 to 47 376. A consumer whose ETL differs from
+the one `fms_core` was built with is the same mismatch as one differing in a
+capacity, and neither `find_package(etl)` here nor `find_dependency(etl)` in the
+exported package states a version that would prevent it.
+
+So `fms::abi::pin()` names a second symbol, carrying the sizes of the ETL
+containers rather than an ETL version — two versions that lay them out
+identically are interchangeable, and refusing those would be a false alarm:
+
+```
+undefined reference to `fms::abi::etl_pin<32ul, 152ul, 40ul>::pin()'
+```
+
+The numbers are the consumer's; `fms_core` defines the one specialisation its
+own ETL produced. `fms_yaml_ETL_VERSION` in the installed package config records
+which version that was. The three numbers are whole sizes of fixed-capacity
+instantiations, inline storage included, not overheads. What this does not catch
+is a layout change that leaves all three of them alone — three instantiations
+are a sample, not a hash of every ETL type the library touches.
+
 `tools/abi_guard_check.sh` is the gate, run by the `abi_guard` test. It checks
 that every `FMS_MAX_*` in `limits.hpp` is named on a line that builds the tag,
 that a probe built with the library's own capacities links and runs, that the
 tag that probe reports has one field per capacity — a name on an `FMS_ABI_ID_nn`
 line the join chain never reaches passes the first check and shows up as a
-missing field here — and that one built with a
-changed capacity does not link and says which symbol it could not resolve. The
-changed capacity is derived from what the probe reports, so the gate holds for a
+missing field here — that one built with a
+changed capacity does not link and says which symbol it could not resolve, that
+the object file of a probe constructing `Model` and `Setup` carries the ETL
+guard as an undefined symbol, and that a probe naming a different container
+layout does not link. The changed capacity and the layout numbers are derived
+from what the probe reports, so the gate holds for a
 tuned tree as well as for the defaults. GCC and Clang only: it is a statement
 about linking, and one toolchain proving it is enough.
+
+The object-file check is there because the two link checks pass without it. They
+prove the mechanism, not that anything reaches it: with the `etl_pin_here::pin()`
+call taken out of `fms::abi::pin()`, a mismatched ETL links silently again and
+both link checks still report ok.
 
 ## Testing
 

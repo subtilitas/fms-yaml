@@ -6,6 +6,30 @@ numbers promise is in [docs/stability.md](docs/stability.md).
 
 ## Unreleased
 
+### Fixed
+
+- **The ABI guard now covers ETL, not only the capacities.** ETL decides what
+  the containers inside `Model`, `Setup`, `Args` and `Runtime` cost, and it
+  moved `sizeof(etl::vector)` by 8 bytes between its 20.40.0 and 20.40.1 tags
+  with no interface change — `sizeof(fms::Model)` is 49 728 below that boundary
+  and 47 376 above it. Neither `find_package(etl)` nor the exported
+  `find_dependency(etl)` states a version, so a consumer whose ETL differed from
+  the one the library was built with compiled, linked and ran with two layouts
+  for one type, exactly as a consumer differing in a capacity did before
+  `fms/abi.hpp` existed. `fms::abi::pin()` now names a second symbol carrying
+  the container sizes, and the mismatch is an unresolved
+  `fms::abi::etl_pin<...>` at link time.
+
+  It pins the layout rather than the ETL version: two versions that lay the
+  containers out identically still link, so 20.39.0, 20.39.4 and 20.40.0 are
+  interchangeable against each other and 20.41.0 and later are not.
+
+### Added
+
+- `fms_yaml_ETL_VERSION` in the installed package config, recording which ETL
+  the library was built against. The link error names the consumer's numbers;
+  this is the other half of the comparison.
+
 ## [1.0.0] - 2026-09-04
 
 Released from `v1.0.0-rc1` and `v1.0.0-rc2`. Neither candidate nor this release

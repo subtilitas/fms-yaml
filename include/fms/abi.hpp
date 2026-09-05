@@ -22,6 +22,12 @@
 #ifndef FMS_ABI_HPP
 #define FMS_ABI_HPP
 
+#include <cstddef>
+
+#include <etl/flat_map.h>
+#include <etl/string.h>
+#include <etl/vector.h>
+
 #include "fms/limits.hpp"
 
 // Two levels: the outer macro expands its arguments, the inner one pastes them.
@@ -71,12 +77,63 @@ namespace fms::abi {
 /// channel length, message length, findings.
 constexpr const char* tag() noexcept { return FMS_ABI_TAG; }
 
+/// The size of one fixed small instantiation of each ETL container that appears
+/// in the layout of Model, Setup, Args and Runtime.  These are whole sizes, not
+/// overheads - sizeof(etl::vector<char, 4>) includes the four bytes of inline
+/// storage.  The capacity is fixed here so that the numbers move when ETL
+/// changes how a container is laid out and stay put when this build's
+/// capacities change; the capacities are in FMS_ABI_SYMBOL already.
+///
+/// The capacities are not the only thing that decides those layouts.  ETL moved
+/// sizeof(etl::vector) by 8 bytes between its 20.40.0 and 20.40.1 tags with no
+/// interface change, which took sizeof(fms::Model) from 49728 to 47376.  A
+/// consumer whose ETL differs from the one fms_core was built with sees
+/// different types under the same names, exactly as one differing in a capacity
+/// does, and nothing stops it: find_package(etl) here and find_dependency(etl)
+/// in the exported package both state no version.
+///
+/// This measures the layout rather than the version, because two ETL versions
+/// that lay these out identically are interchangeable and refusing them would
+/// be a false alarm.  What it does not measure is a layout change that leaves
+/// all three of these sizes alone: three instantiations are a sample, not a
+/// hash of every ETL type this library touches.
+struct etl_layout {
+  static constexpr std::size_t vector = sizeof(etl::vector<char, 4>);
+  static constexpr std::size_t flat_map = sizeof(etl::flat_map<char, char, 4>);
+  static constexpr std::size_t string = sizeof(etl::string<7>);
+};
+
+/// Declared here for every layout and defined once, by fms_core, for the one
+/// its own ETL produced.  A translation unit whose ETL lays these out
+/// differently names a different specialisation, and nothing defines that: an
+/// undefined reference carrying the numbers, at link time, rather than a
+/// corrupted object at run time.
+template <std::size_t Vector, std::size_t FlatMap, std::size_t String>
+struct etl_pin {
+  static void pin() noexcept;
+};
+
+/// The specialisation this translation unit's ETL names.
+using etl_pin_here =
+    etl_pin<etl_layout::vector, etl_layout::flat_map, etl_layout::string>;
+
+/// Declared before pin() below uses it, so that the definition in fms_core is a
+/// specialisation rather than one made after an implicit instantiation.  This
+/// declares it for whichever numbers the including translation unit produced;
+/// only fms_core's own translation unit defines one, so any other numbers are
+/// an undefined reference.
+template <>
+void etl_pin_here::pin() noexcept;
+
 /// Called by the constructors of Model, Setup, Args and Runtime - every type
-/// whose layout a capacity decides and whose storage the caller provides.  A
-/// program that uses this library builds at least one of them, so it resolves
-/// this name, and it resolves only against an fms_core built with the same
-/// capacities.
-inline void pin() noexcept { FMS_ABI_SYMBOL(); }
+/// whose layout a capacity or ETL decides and whose storage the caller
+/// provides.  A program that uses this library builds at least one of them, so
+/// it resolves both names, and they resolve only against an fms_core built with
+/// the same capacities and an ETL that agrees about its containers.
+inline void pin() noexcept {
+  FMS_ABI_SYMBOL();
+  etl_pin_here::pin();
+}
 
 }  // namespace fms::abi
 
