@@ -45,7 +45,7 @@ tree rather than by the reporting service.
 | anything that changes a type's size — a capacity default, a field, the ETL pin | the sizes quoted in `docs/architecture.md`, `include/fms/abi.hpp` and `tools/abi_guard_check.sh`; `doc_figures` fails until they match, and names each one |
 | anything user-visible | add a line to [CHANGELOG.md](CHANGELOG.md) under Unreleased |
 | the version | only `project()` in `CMakeLists.txt`; `fms/version.hpp` is generated from it |
-| the pinned ETL version in `FetchContent_Declare(etl)` | update `ETL_VERSION` in `tools/install_check.sh` to match, and add the new pin to the `etl-range` matrix in `.github/workflows/ci.yml`; `tools/etl_range_check.sh --check` fails until the matrix lists it |
+| the pinned ETL version in `FetchContent_Declare(etl)` | update `ETL_VERSION` in `tools/install_check.sh` to match, and add the new pin to the `etl-range` matrix in `.github/workflows/ci.yml`; `tools/etl_range_check.sh --check` fails until the matrix lists it, and `doc_figures` reports the sizes the pages quote if the bump crosses ETL's 20.40.1 layout boundary |
 
 ## Writing
 

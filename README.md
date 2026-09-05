@@ -451,6 +451,7 @@ What they add up to, and what is not covered, is in
 | Capacities | the suite built and run at three configurations, not just the defaults | `ci.yml` → `capacities` |
 | Packaging | install it, then build a consumer that knows it only through `find_package` | `ci.yml` → `install` |
 | Deep static analysis | CodeQL (`security-and-quality`) over a real build | `codeql.yml` |
+| Dependency freshness | the pinned ETL against what ETL has published, weekly | `supply-chain.yml` |
 
 Both analysers run through `tools/analyze.sh`, so the flags exist once and a
 local run is the run that gates the build:

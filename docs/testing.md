@@ -181,6 +181,11 @@ reports both in every row, because the version the build compiled against is the
 header's and the version the matrix leg is named for is the tag's. The table
 above is by tag; the one the job prints carries each.
 
+`tools/etl_latest_check.sh` compares the pin against ETL's published tags, and
+the weekly `Supply chain` workflow opens one issue when it falls behind. It
+reports; moving the pin is a decision, and a bump across the 20.40.1 boundary
+changes the sizes `docs/architecture.md` quotes.
+
 There is no ETL 21.x. The newest tag is 20.48.1, so a version range with an
 upper bound of 21.0.0 is a claim about code that does not exist — and because
 ETL's package is `SameMajorVersion`, `find_package(etl 20.39.0...21.0.0)` is

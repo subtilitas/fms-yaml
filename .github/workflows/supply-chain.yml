@@ -1,0 +1,82 @@
+# SPDX-License-Identifier: MIT
+#
+# Notice when the pinned ETL falls behind.
+#
+# The pin in CMakeLists.txt is what every gate but etl-range builds against, and
+# nothing else here looks at what ETL has published since.  A pin nobody
+# revisits is how a project ends up years back with no decision ever having been
+# made, so this makes the falling-behind visible.  Moving the pin stays a
+# decision: this opens an issue and changes nothing.
+#
+# It runs on a schedule rather than on push, because the answer changes when ETL
+# publishes rather than when this repository does.  A dependency being ahead is
+# news and does not fail the run; a check that could not answer does, because a
+# watch that quietly stopped watching is worse than no watch.
+name: Supply chain
+
+on:
+  schedule:
+    # Weekly. ETL publishes every few weeks, so daily would ask a question whose
+    # answer has not changed.
+    - cron: '0 6 * * 1'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  etl-latest:
+    name: etl (newer than the pin?)
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: read
+      issues: write
+    steps:
+      - uses: actions/checkout@v7
+
+      - name: Compare the pin against ETL's tags
+        id: compare
+        run: |
+          set +e
+          bash tools/etl_latest_check.sh > report.txt 2>&1
+          echo "status=$?" >> "$GITHUB_OUTPUT"
+          cat report.txt
+
+      # Exit 1 is the script failing, which is worth a red run.  Exit 2 is ETL
+      # being ahead, which is not.
+      - name: Fail if the check itself could not run
+        if: steps.compare.outputs.status == '1'
+        run: |
+          echo "::error::tools/etl_latest_check.sh could not answer"
+          exit 1
+
+      # One issue, reopened and updated rather than a new one every week: a
+      # weekly duplicate is a notification people learn to skip.  Closed ones
+      # count, and are reopened - closing the issue does not make the pin newer,
+      # and searching only open ones would file a fresh duplicate instead.
+      - name: Open or update the issue
+        if: steps.compare.outputs.status == '2'
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          TITLE: 'ETL has published a version newer than the pin'
+        run: |
+          body="$(printf '%s\n\n%s\n' \
+            "$(cat report.txt)" \
+            'The pin is GIT_TAG in FetchContent_Declare(etl) in CMakeLists.txt, and ETL_VERSION in tools/install_check.sh must match it. A new pin also goes in the etl-range matrix in .github/workflows/ci.yml, which tools/etl_range_check.sh --check enforces. Moving it is a decision, not a formality: ETL changed the layout of its containers between the 20.40.0 and 20.40.1 tags, so a bump across that boundary changes the sizes docs/architecture.md quotes, which tools/doc_figures_check.py will report.')"
+
+          existing="$(gh issue list --state all --search "$TITLE in:title" \
+                      --json number,title,state \
+                      --jq ".[] | select(.title == \"$TITLE\") | \"\(.number) \(.state)\"" \
+                      | head -1)"
+
+          if [ -n "${existing}" ]; then
+            number="${existing%% *}"
+            state="${existing##* }"
+            if [ "${state}" = "CLOSED" ]; then
+              gh issue reopen "${number}"
+            fi
+            gh issue edit "${number}" --body "${body}"
+            echo "updated issue #${number} (was ${state})"
+          else
+            gh issue create --title "$TITLE" --body "${body}"
+          fi
