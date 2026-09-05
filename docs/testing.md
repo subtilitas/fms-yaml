@@ -141,7 +141,7 @@ anything here wants it. Two libraries that both fetch ETL into one binary
 compile against whichever of them declared it first, so a composed build can put
 this library on a version it did not choose.
 
-All nine compile clean under `-Werror` and pass the full suite; the interface
+All of them compile clean under `-Werror` and pass the full suite; the interface
 is stable across them. What is not stable is size. Between the `20.40.0` and
 `20.40.1` tags `etl::vector` lost 8 bytes per instance, which reaches the `fms`
 types that hold ETL containers by value:
@@ -207,7 +207,7 @@ business alone, so `v1.0.0-rc2` is compared as `1.0.0`.
   no emulator.
 - A yaml-cpp or doctest version other than the pinned 0.8.0 and 2.4.11. A newer
   one may work and is not tested. ETL is the exception: the `etl-range` job
-  builds and tests against the eight versions listed under
+  builds and tests against the versions listed under
   [ETL versions](#etl-versions) above.
 - Concurrent use. The library is single threaded by design, which
   [architecture.md](architecture.md#threading) states; no test drives one
