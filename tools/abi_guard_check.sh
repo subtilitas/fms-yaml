@@ -192,7 +192,19 @@ if ! "${cxx}" -std=c++17 -O2 -fno-exceptions -DETL_LOG_ERRORS \
   cat "${work}/probe-object.log" >&2
   exit 1
 fi
-if ! nm -C "${work}/probe.o" | grep -q 'U .*fms::abi::etl_pin<'; then
+# nm reads the object; without it this check cannot answer either way, and a
+# missing tool must not read as a missing symbol.
+if ! command -v nm > /dev/null 2>&1; then
+  echo "abi_guard: nm is not installed, and this check reads the probe's" >&2
+  echo "           symbol table.  A gate that could not run has not passed." >&2
+  exit 1
+fi
+if ! nm -C "${work}/probe.o" > "${work}/probe-symbols.txt" 2> "${work}/nm.log"; then
+  echo "abi_guard: nm could not read ${work}/probe.o" >&2
+  cat "${work}/nm.log" >&2
+  exit 1
+fi
+if ! grep -q 'U .*fms::abi::etl_pin<' "${work}/probe-symbols.txt"; then
   echo "abi_guard: constructing Model and Setup does not reference the ETL" >&2
   echo "           layout guard.  fms::abi::pin() is where it is called from;" >&2
   echo "           without that call an ETL whose containers are laid out" >&2

@@ -77,10 +77,12 @@ namespace fms::abi {
 /// channel length, message length, findings.
 constexpr const char* tag() noexcept { return FMS_ABI_TAG; }
 
-/// The per-instance overhead of the ETL containers that appear in the layout of
-/// Model, Setup, Args and Runtime, measured at a fixed small capacity so the
-/// numbers describe the container and not this build's capacities - those are
-/// in FMS_ABI_SYMBOL already.
+/// The size of one fixed small instantiation of each ETL container that appears
+/// in the layout of Model, Setup, Args and Runtime.  These are whole sizes, not
+/// overheads - sizeof(etl::vector<char, 4>) includes the four bytes of inline
+/// storage.  The capacity is fixed here so that the numbers move when ETL
+/// changes how a container is laid out and stay put when this build's
+/// capacities change; the capacities are in FMS_ABI_SYMBOL already.
 ///
 /// The capacities are not the only thing that decides those layouts.  ETL moved
 /// sizeof(etl::vector) by 8 bytes between its 20.40.0 and 20.40.1 tags with no
@@ -93,7 +95,7 @@ constexpr const char* tag() noexcept { return FMS_ABI_TAG; }
 /// This measures the layout rather than the version, because two ETL versions
 /// that lay these out identically are interchangeable and refusing them would
 /// be a false alarm.  What it does not measure is a layout change that leaves
-/// all three of these sizes alone; the sizes are the container overhead, not a
+/// all three of these sizes alone: three instantiations are a sample, not a
 /// hash of every ETL type this library touches.
 struct etl_layout {
   static constexpr std::size_t vector = sizeof(etl::vector<char, 4>);

@@ -370,9 +370,10 @@ undefined reference to `fms::abi::etl_pin<32ul, 152ul, 40ul>::pin()'
 
 The numbers are the consumer's; `fms_core` defines the one specialisation its
 own ETL produced. `fms_yaml_ETL_VERSION` in the installed package config records
-which version that was. What this does not catch is a layout change that leaves
-all three of those sizes alone — they are the container overhead, not a hash of
-every ETL type the library touches.
+which version that was. The three numbers are whole sizes of fixed-capacity
+instantiations, inline storage included, not overheads. What this does not catch
+is a layout change that leaves all three of them alone — three instantiations
+are a sample, not a hash of every ETL type the library touches.
 
 `tools/abi_guard_check.sh` is the gate, run by the `abi_guard` test. It checks
 that every `FMS_MAX_*` in `limits.hpp` is named on a line that builds the tag,
