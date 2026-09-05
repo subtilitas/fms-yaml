@@ -21,9 +21,17 @@ with its reason printed rather than asserting numbers that are legitimately
 different: the etl-range matrix builds eight versions on purpose, and only the
 leg at the pin is the configuration the pages describe.
 
-What this does not check: the sizes docs/testing.md and docs/stability.md quote
-for a different ETL.  Those describe a build this one is not, and
-tools/etl_range_check.sh reports them per version.
+docs/testing.md's ETL boundary table is checked whichever ETL this build uses,
+because each of its columns belongs to one side of that boundary and every build
+is on one side or the other.  That is the one thing an etl-range leg can say
+something about, and an ETL in neither column fails: the columns name their
+ends, so a matrix that grew past them would otherwise be measured against
+nothing.
+
+What this does not check: a row deleted from either table.  The page then says
+less rather than something false, and this gate is for false.  It also says
+nothing about docs/stability.md's prose pair, which repeats the boundary in a
+sentence rather than a table.
 
 Reads build-dir/abi_probe.env, which the build writes, for the compiler and
 ETL's include directory.  GCC and Clang only, and x86-64: the pages say x86-64
@@ -41,10 +49,6 @@ import tempfile
 
 ROOT = pathlib.Path(__file__).resolve().parent.parent
 
-# ctest reads this as "skipped" rather than "passed", so a build that is not the
-# documented configuration says so instead of quietly checking nothing.
-SKIP = 77
-
 # The configuration docs/architecture.md names when it works through a
 # mismatch.  Written once here because it is the example's subject, not a
 # figure: the sizes it produces are measured like every other.
@@ -53,6 +57,8 @@ TUNED = ["-DFMS_MAX_STATES=8", "-DFMS_MAX_TRIGGERS=12"]
 PROBE = """
 #include <cstddef>
 #include <cstdio>
+
+#include <etl/vector.h>
 
 #include <fms/args.hpp>
 #include <fms/model.hpp>
@@ -67,6 +73,7 @@ int main() {
   std::printf("fms::Setup %zu\\n", sizeof(fms::Setup));
   std::printf("fms::Args %zu\\n", sizeof(fms::Args));
   std::printf("fms::Runtime %zu\\n", sizeof(fms::Runtime));
+  std::printf("etl::vector<int,8> %zu\\n", sizeof(etl::vector<int, 8>));
   return 0;
 }
 """
@@ -99,6 +106,13 @@ SENTENCES = [
 ]
 
 TABLE_ROW = re.compile(r"^\| `(fms::[A-Za-z]+)` \| ([\d ]+) B \|")
+
+# docs/testing.md carries the same sizes either side of ETL's layout boundary,
+# one column per band.  Which column applies depends on the ETL this build uses,
+# so every etl-range leg can check its own - the column nobody is building
+# against is the one that goes stale.
+BAND_HEADER = re.compile(r"^\| +\| ([\d.]+) . ([\d.]+) \| ([\d.]+) . ([\d.]+) \|")
+BAND_ROW = re.compile(r"^\| `([^`]+)` \| ([\d ]+) \| ([\d ]+) \|$")
 
 
 def grouped(value: int) -> str:
@@ -151,6 +165,65 @@ def etl_versions(env: dict[str, str]) -> tuple[str | None, str | None]:
     return pinned, measured
 
 
+def version_tuple(text: str) -> tuple[int, ...]:
+    return tuple(int(part) for part in text.split("."))
+
+
+def check_band(etl_tag: str, sizes: dict[str, int]) -> list[str]:
+    """Compare docs/testing.md's boundary table against what this ETL makes.
+
+    The table has one column per side of ETL's layout boundary, so a build
+    checks the column its own ETL falls in.  An ETL in neither column is a
+    failure: the columns name their ends, and a matrix that grew past them
+    would otherwise be measured against nothing.
+    """
+    lines = (ROOT / "docs/testing.md").read_text().splitlines()
+    bands, rows = None, []
+    for line in lines:
+        header = BAND_HEADER.match(line)
+        if header:
+            low, high, low2, high2 = header.groups()
+            bands = [(low, high), (low2, high2)]
+            rows = []
+            continue
+        if bands is not None:
+            row = BAND_ROW.match(line)
+            if row:
+                rows.append((row.group(1), row.group(2), row.group(3)))
+            elif rows:
+                break
+
+    if bands is None or not rows:
+        return ["docs/testing.md has no ETL boundary table, and this gate reads "
+                "one - it has moved or changed shape"]
+
+    here = version_tuple(etl_tag)
+    column = None
+    for index, (low, high) in enumerate(bands):
+        if version_tuple(low) <= here <= version_tuple(high):
+            column = index
+            break
+    if column is None:
+        spans = " and ".join(f"{low}-{high}" for low, high in bands)
+        return [f"docs/testing.md's boundary table covers {spans}, and this build "
+                f"uses ETL {etl_tag}, which is in neither - the table names its "
+                f"ends and the matrix has grown past them"]
+
+    failures = []
+    for name, *columns in rows:
+        if name not in sizes:
+            failures.append(f"docs/testing.md's boundary table has a row for {name}, "
+                            f"which this gate does not measure - add it to PROBE")
+            continue
+        documented = int(columns[column].replace(" ", ""))
+        if documented != sizes[name]:
+            low, high = bands[column]
+            failures.append(f"docs/testing.md says {name} is {grouped(documented)} "
+                            f"for ETL {low}-{high}, and ETL {etl_tag} makes it "
+                            f"{grouped(sizes[name])}")
+    return failures
+
+
 def main() -> int:
     # Both spellings of the same architecture: uname says x86_64 and Windows
     # says AMD64, and CMakeLists.txt registers this test for either, so
@@ -177,12 +250,6 @@ def main() -> int:
             return 1
 
     pinned, measured_etl = etl_versions(env)
-    if pinned and measured_etl and pinned != measured_etl:
-        print(f"doc_figures: skipped - this build uses ETL {measured_etl} and the "
-              f"documented sizes are for the pinned {pinned}.")
-        print("             ETL decides part of these layouts, so the figures "
-              "differ here by design.")
-        return SKIP
 
     with tempfile.TemporaryDirectory() as tmp:
         work = pathlib.Path(tmp)
@@ -192,6 +259,25 @@ def main() -> int:
         }
 
     failures = []
+
+    # docs/testing.md's boundary table is checked whichever ETL this is, because
+    # each column belongs to a band and every build is in one of them.  It is
+    # the one thing here an etl-range leg can say something about.
+    if measured_etl:
+        failures += check_band(measured_etl, sizes["default"])
+
+    # Everything below describes the pinned ETL at the default capacities.  A
+    # build against another ETL is not that build, so it reports what it did
+    # check and stops rather than asserting numbers that differ by design.
+    if pinned and measured_etl and pinned != measured_etl:
+        if failures:
+            for failure in failures:
+                print(f"doc_figures: {failure}", file=sys.stderr)
+            return 1
+        print(f"doc_figures: ok - the ETL boundary table in docs/testing.md holds "
+              f"for ETL {measured_etl}; the figures for the pinned {pinned} are "
+              f"not this build's to check")
+        return 0
 
     # The table, every row of it.  A row nobody checks is the one that rots.
     architecture = (ROOT / "docs/architecture.md").read_text()

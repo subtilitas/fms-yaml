@@ -34,10 +34,10 @@ because the build it is in cannot express what it checks, tests nothing.
 `abi_guard` and `symbol_check` read the built archives, which instrumentation
 rewrites, so a coverage or sanitizer build cannot answer the question they ask.
 `doc_figures` needs the same `abi_probe.env` those two read, and the sizes it
-compares are the ones `docs/architecture.md` states for x86-64. It reports
-skipped, not passed, in a build against any ETL but the pinned one — the
-`etl-range` legs below are exactly that, and the figures differ there by
-design.
+compares are the ones `docs/architecture.md` states for x86-64. In a build
+against any ETL but the pinned one it checks the boundary table below instead,
+and says which of the two it did — the `etl-range` legs are exactly that build,
+and the figures for the pin differ there by design.
 
 Measured on this tree:
 
@@ -161,8 +161,12 @@ types that hold ETL containers by value:
 | `fms::Runtime` | 688 | 680 |
 | `fms::Setup` | 576 | 576 |
 
-The job records these rather than asserting them, because no binary
-compatibility is promised in either direction. Two versions below the boundary
+`tools/etl_range_check.sh` records these per version rather than asserting them,
+because no binary compatibility is promised in either direction. The table
+itself is asserted, though — `doc_figures` checks the column its own ETL falls
+in, so every leg of the matrix confirms one side of it, and an ETL in neither
+column fails because the columns name their ends. A size that moves is news; a
+page that describes sizes nothing makes is a defect. Two versions below the boundary
 stay in the matrix so that it keeps being measured: a matrix covering one side
 only would not notice the next such change.
 
