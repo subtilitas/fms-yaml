@@ -8,6 +8,12 @@ numbers promise is in [docs/stability.md](docs/stability.md).
 
 ### Added
 
+- `doc_figures` checks the ETL boundary table in `docs/testing.md` in every
+  build, not only at the pin. Each column belongs to one side of ETL's 20.40.1
+  layout boundary, so each `etl-range` leg confirms the column its own ETL falls
+  in, and an ETL in neither column fails — the columns name their ends, so a
+  matrix that grew past them would be measured against nothing.
+
 - `tools/etl_latest_check.sh` and the weekly `Supply chain` workflow: the pinned
   ETL is compared against what ETL has published, and one issue is opened and
   kept updated when it falls behind. It reports rather than bumps — a pin
