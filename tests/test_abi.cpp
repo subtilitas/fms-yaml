@@ -12,9 +12,26 @@
 
 #include <doctest/doctest.h>
 #include <etl/array.h>
+#include <etl/flat_map.h>
+#include <etl/string.h>
+#include <etl/vector.h>
 
 #include "fms/abi.hpp"
 #include "fms/limits.hpp"
+
+TEST_CASE("the etl layout constants describe the containers, not the build") {
+  // Measured at a fixed small capacity on purpose: the numbers have to move
+  // when ETL changes what a container costs and stay put when this build's
+  // capacities change, because the capacities are in FMS_ABI_TAG already.  If
+  // they tracked the capacities, every tuned build would refuse every other
+  // one for a difference the capacity guard already covers.
+  CHECK(fms::abi::etl_layout::vector == sizeof(etl::vector<char, 4>));
+  CHECK(fms::abi::etl_layout::flat_map == sizeof(etl::flat_map<char, char, 4>));
+  CHECK(fms::abi::etl_layout::string == sizeof(etl::string<7>));
+
+  // A container with more room is a bigger object; the probe's numbers are not.
+  CHECK(sizeof(etl::vector<char, 64>) > fms::abi::etl_layout::vector);
+}
 
 TEST_CASE("the abi tag records every capacity, in order") {
   // The order here is the order fms/abi.hpp pastes them in.  A capacity added
