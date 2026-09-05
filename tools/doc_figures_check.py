@@ -152,7 +152,10 @@ def etl_versions(env: dict[str, str]) -> tuple[str | None, str | None]:
 
 
 def main() -> int:
-    if platform.machine() != "x86_64":
+    # Both spellings of the same architecture: uname says x86_64 and Windows
+    # says AMD64, and CMakeLists.txt registers this test for either, so
+    # accepting only one would fail on a machine it was registered for.
+    if platform.machine() not in ("x86_64", "AMD64"):
         print(f"doc_figures: the documented sizes say x86-64 and this is "
               f"{platform.machine()}.", file=sys.stderr)
         print("             The numbers are ABI-specific, so comparing them",
