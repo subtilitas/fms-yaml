@@ -213,14 +213,27 @@ run "${work}/sizes-build.log" \
     -I "${root}/include" -I "${work}/prefix/include" \
     "${work}/sizes.cpp" -o "${work}/sizes"
 
-row="$("${work}/sizes")"
-echo "etl_range_check: | etl | vector<int,8> | Model | Setup | Args | Runtime |"
+# Both labels.  The sizes program can only report the version its headers
+# declare, and on one tag that is not the tag: 20.40.1 ships an etl/version.h
+# reading 20.41.1.  A row carrying the header alone leaves the table with no
+# 20.40.1 in it while the matrix leg is named 20.40.1, and a reader of the table
+# concludes the layout moved somewhere it did not.
+heading="| tag | etl | vector<int,8> | Model | Setup | Args | Runtime |"
+rule="|---|---|---:|---:|---:|---:|---:|"
+row="| ${version} $("${work}/sizes")"
+
+echo "etl_range_check: ${heading}"
 echo "etl_range_check: ${row}"
 
-# One row per matrix leg, appended to the run's summary so the whole range reads
-# as a table without opening a log.
+# GITHUB_STEP_SUMMARY is per job and every matrix leg is its own job, so this is
+# one complete one-row table per leg rather than rows accumulating into one -
+# hence the heading, without which the row renders as a line of pipes.
 if [ -n "${GITHUB_STEP_SUMMARY:-}" ]; then
-  echo "${row}" >> "${GITHUB_STEP_SUMMARY}"
+  {
+    echo "${heading}"
+    echo "${rule}"
+    echo "${row}"
+  } >> "${GITHUB_STEP_SUMMARY}"
 fi
 
 echo "etl_range_check: ok - ETL ${version} builds, tests and reports its sizes"

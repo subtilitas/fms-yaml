@@ -170,7 +170,9 @@ constraint that would enforce it.
 One tag reports a version that is not its own: `20.40.1` ships an
 `etl/version.h` reading `20.41.1`. `find_package` compares the header, so a
 constraint of `20.41.0` or above accepts that tag. `tools/etl_range_check.sh`
-prints both when they differ.
+reports both in every row, because the version the build compiled against is the
+header's and the version the matrix leg is named for is the tag's. The table
+above is by tag; the one the job prints carries each.
 
 There is no ETL 21.x. The newest tag is 20.48.1, so a version range with an
 upper bound of 21.0.0 is a claim about code that does not exist — and because

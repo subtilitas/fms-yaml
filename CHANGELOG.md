@@ -15,6 +15,18 @@ numbers promise is in [docs/stability.md](docs/stability.md).
   container sizes are the ones every version from 20.40.1 up reports, so it adds
   a leg rather than a band.
 
+### Fixed
+
+- `tools/etl_range_check.sh` reports the tag as well as the version the headers
+  declare. The two differ on the one tag that sits on the layout boundary —
+  20.40.1 ships an `etl/version.h` reading 20.41.1 — so the row that documents
+  where the layout moved was labelled 20.41.1, and the table had no 20.40.1 row
+  at all while the matrix leg that produced it was named 20.40.1.
+
+- Each `etl-range` leg writes a complete table to its step summary. The rows do
+  not accumulate across legs: `GITHUB_STEP_SUMMARY` is per job, and every leg is
+  its own job, so a bare row rendered as a line of pipes.
+
 ## [1.0.1] - 2026-09-05
 
 A build that was already wrong now fails to build. If a consumer's ETL lays out
