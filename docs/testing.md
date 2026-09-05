@@ -141,7 +141,7 @@ anything here wants it. Two libraries that both fetch ETL into one binary
 compile against whichever of them declared it first, so a composed build can put
 this library on a version it did not choose.
 
-All eight compile clean under `-Werror` and pass the full suite; the interface
+All nine compile clean under `-Werror` and pass the full suite; the interface
 is stable across them. What is not stable is size. Between the `20.40.0` and
 `20.40.1` tags `etl::vector` lost 8 bytes per instance, which reaches the `fms`
 types that hold ETL containers by value:
