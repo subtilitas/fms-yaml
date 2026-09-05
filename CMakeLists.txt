@@ -538,6 +538,11 @@ FMS_CAPACITY_FLAGS=\"${fms_capacity_flags}\"
         COMMAND ${Python3_EXECUTABLE}
                 ${CMAKE_CURRENT_SOURCE_DIR}/tools/doc_figures_check.py
                 ${CMAKE_BINARY_DIR})
+      # The documented figures are for the pinned ETL.  The etl-range matrix
+      # builds seven other versions on purpose, where those numbers differ by
+      # design, so the gate reports skipped there rather than failing - and
+      # reports it, rather than passing having compared nothing.
+      set_tests_properties(doc_figures PROPERTIES SKIP_RETURN_CODE 77)
     endif()
   endif()
 

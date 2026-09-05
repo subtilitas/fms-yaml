@@ -16,6 +16,11 @@ makes.
 The figures are measured, never listed here.  A gate holding its own copy of
 the numbers is one more place for them to be wrong.
 
+The figures describe the pinned ETL, so a build against any other one skips
+with its reason printed rather than asserting numbers that are legitimately
+different: the etl-range matrix builds eight versions on purpose, and only the
+leg at the pin is the configuration the pages describe.
+
 What this does not check: the sizes docs/testing.md and docs/stability.md quote
 for a different ETL.  Those describe a build this one is not, and
 tools/etl_range_check.sh reports them per version.
@@ -35,6 +40,10 @@ import sys
 import tempfile
 
 ROOT = pathlib.Path(__file__).resolve().parent.parent
+
+# ctest reads this as "skipped" rather than "passed", so a build that is not the
+# documented configuration says so instead of quietly checking nothing.
+SKIP = 77
 
 # The configuration docs/architecture.md names when it works through a
 # mismatch.  Written once here because it is the example's subject, not a
@@ -124,6 +133,24 @@ def measure(env: dict[str, str], work: pathlib.Path, flags: list[str]) -> dict[s
     return {name: int(size) for name, size in (line.split() for line in out.splitlines())}
 
 
+def etl_versions(env: dict[str, str]) -> tuple[str | None, str | None]:
+    """The ETL this build uses, and the one CMakeLists.txt pins."""
+    declare = re.search(r"FetchContent_Declare\(etl\b.*?GIT_TAG\s+(\S+)",
+                        (ROOT / "CMakeLists.txt").read_text(), re.DOTALL)
+    pinned = declare.group(1) if declare else None
+
+    measured = None
+    for directory in env.get("ETL_INCLUDE", "").split(";"):
+        header = pathlib.Path(directory) / "etl" / "version.h" if directory else None
+        if header and header.is_file():
+            parts = [re.search(rf"#define ETL_VERSION_{part} (\d+)", header.read_text())
+                     for part in ("MAJOR", "MINOR", "PATCH")]
+            if all(parts):
+                measured = ".".join(part.group(1) for part in parts)
+            break
+    return pinned, measured
+
+
 def main() -> int:
     if platform.machine() != "x86_64":
         print(f"doc_figures: the documented sizes say x86-64 and this is "
@@ -145,6 +172,14 @@ def main() -> int:
         if not env.get(required):
             print(f"doc_figures: {env_file} has no {required}", file=sys.stderr)
             return 1
+
+    pinned, measured_etl = etl_versions(env)
+    if pinned and measured_etl and pinned != measured_etl:
+        print(f"doc_figures: skipped - this build uses ETL {measured_etl} and the "
+              f"documented sizes are for the pinned {pinned}.")
+        print("             ETL decides part of these layouts, so the figures "
+              "differ here by design.")
+        return SKIP
 
     with tempfile.TemporaryDirectory() as tmp:
         work = pathlib.Path(tmp)

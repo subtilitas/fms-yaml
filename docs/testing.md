@@ -34,7 +34,10 @@ because the build it is in cannot express what it checks, tests nothing.
 `abi_guard` and `symbol_check` read the built archives, which instrumentation
 rewrites, so a coverage or sanitizer build cannot answer the question they ask.
 `doc_figures` needs the same `abi_probe.env` those two read, and the sizes it
-compares are the ones `docs/architecture.md` states for x86-64.
+compares are the ones `docs/architecture.md` states for x86-64. It reports
+skipped, not passed, in a build against any ETL but the pinned one — the
+`etl-range` legs below are exactly that, and the figures differ there by
+design.
 
 Measured on this tree:
 
