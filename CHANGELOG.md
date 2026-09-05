@@ -6,6 +6,24 @@ numbers promise is in [docs/stability.md](docs/stability.md).
 
 ## Unreleased
 
+## [1.0.1] - 2026-09-05
+
+A build that was already wrong now fails to build. If a consumer's ETL lays out
+its containers differently from the ETL `fms_core` was compiled with, the link
+step refuses it, where 1.0.0 accepted it and produced two layouts for one type.
+Nothing else changes: no interface moves, and a consumer whose ETL agrees with
+the library sees no difference.
+
+The versions that agree with each other are the ones that lay
+`etl::vector`, `etl::flat_map` and `etl::string` out identically, not the ones
+that share a version number. ETL 20.39.0, 20.39.4 and 20.40.0 are
+interchangeable here; 20.40.1 and later are not interchangeable with them.
+
+This is a patch release because no promise on
+[docs/stability.md](docs/stability.md) changes. Binary compatibility was never
+offered in either direction; the guard that was supposed to enforce that only
+covered half of what decides a layout.
+
 ### Fixed
 
 - **The ABI guard now covers ETL, not only the capacities.** ETL decides what
@@ -235,6 +253,7 @@ First tagged release.
 - The heap trap (`fms_alloc_guard`) and the no-allocation proof that uses it.
 - CI, coverage, clang-tidy, cppcheck, the sanitizers, and a release workflow.
 
+[1.0.1]: https://github.com/subtilitas/fms-yaml/releases/tag/v1.0.1
 [1.0.0]: https://github.com/subtilitas/fms-yaml/releases/tag/v1.0.0
 [0.10.0]: https://github.com/subtilitas/fms-yaml/releases/tag/v0.10.0
 [0.9.0]: https://github.com/subtilitas/fms-yaml/releases/tag/v0.9.0

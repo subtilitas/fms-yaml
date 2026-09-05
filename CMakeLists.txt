@@ -1,5 +1,5 @@
 cmake_minimum_required(VERSION 3.20)
-project(fms_yaml VERSION 1.0.0 LANGUAGES CXX)
+project(fms_yaml VERSION 1.0.1 LANGUAGES CXX)
 
 # ---------------------------------------------------------------------------
 # Options
