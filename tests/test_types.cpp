@@ -4,10 +4,10 @@
 // pointer and a length to an ETL string, and both are reached with a
 // default-constructed StringView: MemoryPort::inject takes its arguments
 // parameter by default, and a machine that publishes no argument text passes
-// one through.  Such a view has a null data() and a zero size(), and
-// assign(nullptr, 0) passes null to a parameter declared never to be null - ETL
-// forwards the pair to memmove, which the sanitizers report and which is
-// undefined however benign it looks.
+// one through.  That view has a null data() as well as a zero size() - an empty
+// view over a literal does not - and assign(nullptr, 0) passes null to a
+// parameter declared never to be null.  ETL forwards the pair to memmove, which
+// the sanitizers report and which is undefined however benign it looks.
 //
 // The cases below assert the behaviour rather than the undefinedness, because a
 // plain build cannot see the latter.  The sanitizers workflow is what catches a
@@ -19,18 +19,23 @@
 
 #include "fms/types.hpp"
 
-TEST_CASE("assign_checked accepts a view with no data") {
+// A default-constructed view is the one whose data() is null in ETL today, and
+// the one MemoryPort::inject() passes on.  The cases assert what these helpers
+// promise - an empty source copies nothing - rather than that ETL represents it
+// with a null pointer, which is ETL's to change and not what is being tested.
+TEST_CASE("assign_checked accepts a default-constructed view") {
   const fms::StringView nothing;
-  REQUIRE(nothing.data() == nullptr);
-  REQUIRE(nothing.size() == 0);
+  REQUIRE(nothing.empty());
 
   etl::string<31> destination("something");
   CHECK(fms::assign_checked(destination, nothing));
   CHECK(destination.empty());
 }
 
-TEST_CASE("append_clipped accepts a view with no data") {
+TEST_CASE("append_clipped accepts a default-constructed view") {
   const fms::StringView nothing;
+  REQUIRE(nothing.empty());
+
   etl::string<31> destination("kept");
 
   fms::append_clipped(destination, nothing);
