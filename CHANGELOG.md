@@ -6,6 +6,25 @@ numbers promise is in [docs/stability.md](docs/stability.md).
 
 ## Unreleased
 
+### Changed
+
+- **ETL is pinned at 20.48.1, was 20.39.4.** The bump crosses ETL's 20.40.1
+  layout boundary, so the types that hold ETL containers by value are smaller:
+  `fms::Model` 49 728 → 47 376 bytes at the defaults and 21 120 → 20 496 at
+  `FMS_MAX_STATES=8 FMS_MAX_TRIGGERS=12`, `fms::StateNode` 736 → 664,
+  `fms::Args` 464 → 456, `fms::Runtime` 688 → 680. `fms::Setup`,
+  `fms::Condition` and `fms::Alternative` are unchanged.
+
+  A consumer compiled against ETL 20.40.0 or earlier no longer links against
+  this build: `fms/abi.hpp` names the container layout, so the mismatch is an
+  unresolved `fms::abi::etl_pin<...>` rather than two layouts for one type.
+  Consumers supply their own ETL through `find_package`, so this is the visible
+  effect of the bump.
+
+  [docs/stability.md](docs/stability.md) lists the ETL pin among the things that
+  "move only with a breaking version", which makes this a 2.0.0 change by the
+  promise made at 1.0 rather than a 1.1.0 one.
+
 ### Added
 
 - `tools/etl_latest_check.sh` and the weekly `Supply chain` workflow: the pinned

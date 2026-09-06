@@ -190,7 +190,7 @@ endif()
 if(FMS_FETCH_DEPS)
   FetchContent_Declare(etl
     GIT_REPOSITORY https://github.com/ETLCPP/etl.git
-    GIT_TAG        20.39.4
+    GIT_TAG        20.48.1
     GIT_SHALLOW    TRUE)
   FetchContent_MakeAvailable(etl)
 else()

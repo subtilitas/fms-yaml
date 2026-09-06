@@ -291,14 +291,15 @@ jobs:
   # Every other job builds against the pinned ETL.  A consumer supplying its own
   # takes the find_package(etl REQUIRED) branch and may bring any version, so
   # this is the job that says what happens on the ones this project does not
-  # pin.  The two below the 20.40.1 tag are in the matrix deliberately: that is
+  # pin.  The four below the 20.40.1 tag are in the matrix deliberately: that is
   # where sizeof(etl::vector) lost 8 bytes with no interface change, and a
-  # matrix covering only one side of it would stop measuring the boundary.
+  # matrix covering only the side the pin is on would stop measuring it.
   #
-  # 20.48.1 is another project's pin rather than a version of interest here.
-  # Two libraries that both FetchContent ETL into one binary get whichever
-  # declared it first, so a composed build can compile this one against a pin it
-  # does not choose - which is a version to have run the suite on.
+  # 20.39.4 was the pin before ETL was bumped to 20.48.1, and stays as one of
+  # the four below the boundary.  Versions this project does not pin still
+  # matter: two libraries that both FetchContent ETL into one binary get
+  # whichever declared it first, so a composed build can compile this one
+  # against a pin it does not choose.
   #
   # Sizes are recorded, not asserted.  docs/stability.md promises no binary
   # compatibility in either direction, so a layout that moves is news rather

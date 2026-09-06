@@ -27,7 +27,7 @@ root="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 work="${1:-${root}/build-install}"
 prefix="${work}/prefix"
 
-ETL_VERSION='20.39.4'
+ETL_VERSION='20.48.1'
 YAML_CPP_VERSION='0.8.0'
 
 mkdir -p "${work}"

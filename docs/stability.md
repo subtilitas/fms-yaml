@@ -106,7 +106,7 @@ These move only with a breaking version:
 | Language | C++17, no exceptions outside `fms_config`, no RTTI requirement |
 | CMake | 3.20 |
 | Toolchains | GCC 13, Clang 18, MSVC 2022. Each is built and tested on every push |
-| ETL | 20.39.4 |
+| ETL | 20.48.1 |
 | yaml-cpp | 0.8.0, and only `fms_config` links it |
 | doctest | 2.4.11, tests only |
 

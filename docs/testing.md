@@ -140,13 +140,19 @@ What it does not reach:
 
 Every other gate builds against the pinned ETL. A consumer supplying its own
 takes the `find_package(etl REQUIRED)` branch and may bring another version, so
-`tools/etl_range_check.sh` builds and tests against nine: 20.39.0, 20.39.4 (the
-pin), 20.40.0, 20.40.1, 20.41.0, 20.43.0, 20.44.0, 20.46.0 and 20.48.1.
+`tools/etl_range_check.sh` builds and tests against nine: 20.39.0, 20.39.4,
+20.40.0, 20.40.1, 20.41.0, 20.43.0, 20.44.0, 20.46.0 and 20.48.1, which is the
+pin.
 
-20.48.1 is there because it is another ETL-based library's pin, not because
-anything here wants it. Two libraries that both fetch ETL into one binary
-compile against whichever of them declared it first, so a composed build can put
-this library on a version it did not choose.
+The four below 20.40.1 are there deliberately. They are the versions the
+boundary separates the pin from, and a matrix covering only the side the pin is
+on would stop measuring where the layout moved. 20.39.4 among them was the pin
+before ETL was bumped.
+
+Versions this project does not pin matter because of composition: two libraries
+that both fetch ETL into one binary compile against whichever of them declared
+it first, so a build linking this one against another ETL-based library can put
+it on a version it did not choose.
 
 All of them compile clean under `-Werror` and pass the full suite; the interface
 is stable across them. What is not stable is size. Between the `20.40.0` and

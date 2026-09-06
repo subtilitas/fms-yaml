@@ -269,13 +269,13 @@ Default limits (32 states, 32 triggers, 8 transitions per state), x86-64:
 
 | Type | Size | |
 |---|---|---|
-| `fms::Model` | 49 728 B | states, triggers and the condition pool |
-| `fms::StateNode` | 736 B | |
+| `fms::Model` | 47 376 B | states, triggers and the condition pool |
+| `fms::StateNode` | 664 B | |
 | `fms::Condition` | 136 B | two fixed-size names dominate |
 | `fms::Alternative` | 6 B | which is the point of interning conditions |
 | `fms::Setup` | 576 B | |
-| `fms::Args` | 464 B | four keys plus four views |
-| `fms::Runtime` | 688 B | includes the Args and the message buffer |
+| `fms::Args` | 456 B | four keys plus four views |
+| `fms::Runtime` | 680 B | includes the Args and the message buffer |
 
 The condition pool is `FMS_MAX_CONDITIONS × sizeof(Condition)`, 8.7 KB by
 default, and each trigger holds a vector of alternatives rather than a single
@@ -320,11 +320,11 @@ Two translation units that disagree about one see different types under the same
 names, and the link succeeds:
 
 ```
-sizeof(fms::Model)   49 728 B   defaults
-sizeof(fms::Model)   21 120 B   FMS_MAX_STATES=8 FMS_MAX_TRIGGERS=12
+sizeof(fms::Model)   47 376 B   defaults
+sizeof(fms::Model)   20 496 B   FMS_MAX_STATES=8 FMS_MAX_TRIGGERS=12
 ```
 
-The library then writes 49 728 bytes into an object the caller reserved 21 120
+The library then writes 47 376 bytes into an object the caller reserved 20 496
 for. Nothing in the type system, the compiler or the linker objects.
 
 Two things prevent it. Inside the build, a capacity is a cache variable that
@@ -427,7 +427,7 @@ drain it from the same loop — do not call `fire()` concurrently.
 ## Porting to a bare-metal target
 
 1. Keep `fms_core`; of the standard library it includes only `<cstdint>`,
-   `<cstddef>` and `<cstring>` itself. **It is not freestanding**: ETL 20.39.4's
+   `<cstddef>` and `<cstring>` itself. **It is not freestanding**: ETL 20.48.1's
    `etl/limits.h` includes `<math.h>`, reached from `etl/string.h` through
    `etl/binary.h`, and libstdc++ 13 refuses `<cmath>` when `__STDC_HOSTED__` is
    0. A target build therefore needs a hosted C++ library — newlib or

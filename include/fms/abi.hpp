@@ -4,10 +4,10 @@
 // inside Model, Setup, Args, Runtime and lint::Report, so they are part of the
 // layout of those types.  A translation unit compiled with different values
 // sees different types under the same names and links against the library
-// anyway: with the defaults sizeof(fms::Model) is 49728, with
-// FMS_MAX_STATES=8 FMS_MAX_TRIGGERS=12 it is 21120, and nothing diagnoses the
-// difference.  The library then writes 49728 bytes into an object the caller
-// allocated 21120 for.
+// anyway: with the defaults sizeof(fms::Model) is 47376, with
+// FMS_MAX_STATES=8 FMS_MAX_TRIGGERS=12 it is 20496, and nothing diagnoses the
+// difference.  The library then writes 47376 bytes into an object the caller
+// allocated 20496 for.
 //
 // So the capacities are pasted into the name of a symbol that fms_core defines
 // once and the constructors of Model, Setup, Args and Runtime reference.  A mismatch is an

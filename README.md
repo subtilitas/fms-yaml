@@ -36,7 +36,7 @@ cmake --build build -j
 ctest --test-dir build --output-on-failure
 ```
 
-Dependencies: ETL 20.39.4, yaml-cpp 0.8.0, and doctest 2.4.11 for the tests.
+Dependencies: ETL 20.48.1, yaml-cpp 0.8.0, and doctest 2.4.11 for the tests.
 Fetched automatically; `-DFMS_FETCH_DEPS=OFF` uses installed copies.
 
 What a version number promises — which headers are the public interface, what

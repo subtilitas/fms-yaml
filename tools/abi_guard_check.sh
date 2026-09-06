@@ -4,8 +4,8 @@
 # The capacities in include/fms/limits.hpp are template arguments of the
 # containers inside Model, Setup, Args, Runtime and lint::Report, so they decide
 # the layout of those types.  A translation unit compiled with different values
-# used to link against fms_core without a word: sizeof(fms::Model) is 49728 with
-# the defaults and 21120 with FMS_MAX_STATES=8 FMS_MAX_TRIGGERS=12.
+# used to link against fms_core without a word: sizeof(fms::Model) is 47376 with
+# the defaults and 20496 with FMS_MAX_STATES=8 FMS_MAX_TRIGGERS=12.
 # include/fms/abi.hpp turns that into an undefined reference.  This is the gate
 # that says it still does.
 #
