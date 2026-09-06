@@ -6,6 +6,21 @@ numbers promise is in [docs/stability.md](docs/stability.md).
 
 ## Unreleased
 
+### Fixed
+
+- `assign_checked` and `append_clipped` passed a null pointer to ETL's `assign`
+  and `append` when the source view was default-constructed, which is what every
+  `MemoryPort::inject()` without an argument string reaches them with. Such a
+  view has a null `data()` as well as a zero `size()` — an empty view over a
+  literal does not — and both parameters are declared never to be null. Neither
+  helper reads the pointer when there is nothing to copy now, whichever kind of
+  empty it is.
+
+  Not visible at the pinned ETL 20.39.4, which does not carry the pair as far as
+  `memmove`. 20.48.1 does, and reports it from `etl/memory.h` under UBSan, so
+  this would surface the next time the pin moves rather than being introduced
+  by it.
+
 ### Added
 
 - `doc_figures` checks the ETL boundary table in `docs/testing.md` in every

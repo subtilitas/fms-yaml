@@ -36,6 +36,14 @@ bool assign_checked(TString& destination, StringView source) noexcept {
   if (source.size() > destination.max_size()) {
     return false;
   }
+  // A default-constructed StringView has a null data() and a zero size(), and
+  // assign(nullptr, 0) passes null to a parameter declared never to be null.
+  // ETL forwards the pair to memmove, so the standard's exemption for a zero
+  // count does not apply and UBSan reports it.
+  if (source.empty()) {
+    destination.clear();
+    return true;
+  }
   destination.assign(source.data(), source.size());
   return true;
 }
@@ -46,6 +54,10 @@ template <typename TString>
 void append_clipped(TString& destination, StringView source) noexcept {
   const std::size_t room = destination.max_size() - destination.size();
   const std::size_t take = (source.size() < room) ? source.size() : room;
+  // Nothing to append, and the pointer may be null - see assign_checked above.
+  if (take == 0) {
+    return;
+  }
   destination.append(source.data(), take);
 }
 
