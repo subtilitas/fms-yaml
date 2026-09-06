@@ -464,6 +464,7 @@ if(FMS_BUILD_TESTS)
     tests/test_args.cpp
     tests/test_condition.cpp
     tests/test_status.cpp
+    tests/test_types.cpp
     tests/test_state_machine.cpp
     tests/test_setup.cpp
     tests/test_loader.cpp

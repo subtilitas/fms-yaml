@@ -6,6 +6,16 @@ numbers promise is in [docs/stability.md](docs/stability.md).
 
 ## Unreleased
 
+### Fixed
+
+- `assign_checked` and `append_clipped` passed a null pointer to `assign` and
+  `append` whenever the source view was empty, which every
+  `MemoryPort::inject()` without an argument string does. Both parameters are
+  declared never to be null. ETL 20.39.4 did not carry the pair as far as
+  `memmove` and 20.48.1 does, so the pin below is what made it visible: UBSan
+  reports it from `etl/memory.h`. Neither helper reads the pointer when there is
+  nothing to copy now.
+
 ### Changed
 
 - **ETL is pinned at 20.48.1, was 20.39.4.** The bump crosses ETL's 20.40.1
