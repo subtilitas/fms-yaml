@@ -8,6 +8,7 @@
 #include <doctest/doctest.h>
 
 #include <cstring>
+#include <string>
 
 #include <etl/array.h>
 
@@ -68,6 +69,18 @@ struct Linted {
     }
     return message;
   }
+};
+
+/// Every Check, in declaration order.  Nothing about the array's size ties it to
+/// the enum's - adding an enumerator to lint.hpp and not to this list compiles,
+/// and the cases below would then simply not cover it.  What notices is the
+/// slug case, which asserts that the value one past the end of this list is
+/// still unhandled: give a seventh enumerator a slug without adding it here and
+/// that assertion fails.
+const etl::array<fms::lint::Check, 6> kAllChecks = {
+    fms::lint::Check::UnreachableState,       fms::lint::Check::DeadEndState,
+    fms::lint::Check::UnusedTrigger,          fms::lint::Check::UnreachableAlternative,
+    fms::lint::Check::ImpossibleGuard,        fms::lint::Check::ShadowedAlternative,
 };
 
 /// True when the message filled its buffer, so text past that point was cut and
@@ -459,14 +472,27 @@ TEST_CASE("a full report says so rather than pretending it looked at everything"
 }
 
 TEST_CASE("every check has a slug and a severity") {
-  const etl::array<fms::lint::Check, 6> checks = {
-      fms::lint::Check::UnreachableState,       fms::lint::Check::DeadEndState,
-      fms::lint::Check::UnusedTrigger,          fms::lint::Check::UnreachableAlternative,
-      fms::lint::Check::ImpossibleGuard,        fms::lint::Check::ShadowedAlternative,
-  };
-  for (const fms::lint::Check check : checks) {
+  for (const fms::lint::Check check : kAllChecks) {
     CHECK(std::strlen(fms::lint::to_string(check)) > 0);
     CHECK(std::strcmp(fms::lint::to_string(check), "unknown-check") != 0);
+  }
+  // What keeps kAllChecks honest.  One past the end of the list has to be a
+  // value no case names; the day someone adds an enumerator and a slug for it
+  // without adding it here, this is what says so.  Check is backed by uint8_t,
+  // so the cast is defined for any value it can hold.
+  // NOLINTNEXTLINE(clang-analyzer-optin.core.EnumCastOutOfRange)
+  const auto past_the_end = static_cast<fms::lint::Check>(kAllChecks.size());
+  INFO("kAllChecks lists ", kAllChecks.size(), " checks");
+  CHECK(std::strcmp(fms::lint::to_string(past_the_end), "unknown-check") == 0);
+
+  // Two checks sharing a slug would make a report ambiguous to anything reading
+  // it by name, which is what a slug is for.
+  for (std::size_t i = 0; i < kAllChecks.size(); ++i) {
+    for (std::size_t j = i + 1; j < kAllChecks.size(); ++j) {
+      INFO("checks ", i, " and ", j, " share a slug");
+      CHECK(std::strcmp(fms::lint::to_string(kAllChecks[i]),
+                        fms::lint::to_string(kAllChecks[j])) != 0);
+    }
   }
   CHECK(std::strcmp(fms::lint::to_string(fms::lint::Severity::Error), "error") == 0);
   CHECK(std::strcmp(fms::lint::to_string(fms::lint::Severity::Warning), "warning") == 0);
@@ -587,5 +613,57 @@ states:
   if (!clipped(message)) {
     CHECK(std::strstr(message.c_str(), "mode == sport") != nullptr);
     CHECK(std::strstr(message.c_str(), "mode != sport") != nullptr);
+  }
+}
+
+// ---------------------------------------------------------------------------
+// lint::Check has the same hazard tests/test_status.cpp exists for on Status:
+// describe() switches over it twice - once for the checks about a state, once
+// for the checks about one alternative - and the second switch ends in
+// `default: return;`.  An enumerator added without an arm there does not fail
+// to build.  It produces the shared prefix, naming the state, trigger and
+// alternative, and then stops: a message that says where but never what.
+//
+// The baseline is derived rather than written out.  A Check value no arm
+// handles gives exactly that truncated message, so every real enumerator has to
+// beat it.
+TEST_CASE("every lint Check describes itself past the shared prefix") {
+  const Linted linted(R"(
+triggers:
+  - {name: go}
+  - {name: back}
+states:
+  - name: idle
+    transitions: {go: running}
+  - name: running
+    transitions: {back: idle}
+)",
+                      "idle");
+
+  fms::lint::Finding finding;
+  finding.state       = 0;
+  finding.trigger     = 0;
+  finding.alternative = 1;
+  finding.other       = 2;
+
+  // The default arm, reached the only way it can be: a value no case names.
+  // Taken one past the end of kAllChecks rather than from a number written out
+  // here, so the two cases cannot disagree about which values are unhandled.
+  // NOLINTNEXTLINE(clang-analyzer-optin.core.EnumCastOutOfRange)
+  finding.check = static_cast<fms::lint::Check>(kAllChecks.size());
+  fms::Message unhandled;
+  fms::lint::describe(linted.model, finding, unhandled);
+
+  for (const fms::lint::Check check : kAllChecks) {
+    finding.check = check;
+    fms::Message described;
+    fms::lint::describe(linted.model, finding, described);
+
+    INFO("check ", std::string(fms::lint::to_string(check)));
+    CHECK(described.size() > 0);
+    // Longer than the prefix an unhandled enumerator stops at.  Not merely
+    // different: the state-level checks write their own sentence and the
+    // alternative-level ones extend the prefix, and both are longer.
+    CHECK(described.size() > unhandled.size());
   }
 }
