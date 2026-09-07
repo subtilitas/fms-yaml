@@ -71,9 +71,12 @@ struct Linted {
   }
 };
 
-/// Every Check, in declaration order.  The size is written out on purpose: an
-/// enumerator added to lint.hpp without being added here fails to compile, which
-/// is the only moment anyone is guaranteed to be looking.
+/// Every Check, in declaration order.  Nothing about the array's size ties it to
+/// the enum's - adding an enumerator to lint.hpp and not to this list compiles,
+/// and the cases below would then simply not cover it.  What notices is the
+/// slug case, which asserts that the value one past the end of this list is
+/// still unhandled: give a seventh enumerator a slug without adding it here and
+/// that assertion fails.
 const etl::array<fms::lint::Check, 6> kAllChecks = {
     fms::lint::Check::UnreachableState,       fms::lint::Check::DeadEndState,
     fms::lint::Check::UnusedTrigger,          fms::lint::Check::UnreachableAlternative,
@@ -473,6 +476,15 @@ TEST_CASE("every check has a slug and a severity") {
     CHECK(std::strlen(fms::lint::to_string(check)) > 0);
     CHECK(std::strcmp(fms::lint::to_string(check), "unknown-check") != 0);
   }
+  // What keeps kAllChecks honest.  One past the end of the list has to be a
+  // value no case names; the day someone adds an enumerator and a slug for it
+  // without adding it here, this is what says so.  Check is backed by uint8_t,
+  // so the cast is defined for any value it can hold.
+  // NOLINTNEXTLINE(clang-analyzer-optin.core.EnumCastOutOfRange)
+  const auto past_the_end = static_cast<fms::lint::Check>(kAllChecks.size());
+  INFO("kAllChecks lists ", kAllChecks.size(), " checks");
+  CHECK(std::strcmp(fms::lint::to_string(past_the_end), "unknown-check") == 0);
+
   // Two checks sharing a slug would make a report ambiguous to anything reading
   // it by name, which is what a slug is for.
   for (std::size_t i = 0; i < kAllChecks.size(); ++i) {
@@ -635,9 +647,10 @@ states:
   finding.other       = 2;
 
   // The default arm, reached the only way it can be: a value no case names.
-  // Check is backed by uint8_t, so the cast is defined.
+  // Taken one past the end of kAllChecks rather than from a number written out
+  // here, so the two cases cannot disagree about which values are unhandled.
   // NOLINTNEXTLINE(clang-analyzer-optin.core.EnumCastOutOfRange)
-  finding.check = static_cast<fms::lint::Check>(200);
+  finding.check = static_cast<fms::lint::Check>(kAllChecks.size());
   fms::Message unhandled;
   fms::lint::describe(linted.model, finding, unhandled);
 
