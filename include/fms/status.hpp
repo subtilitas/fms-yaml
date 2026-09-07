@@ -8,7 +8,11 @@
 
 namespace fms {
 
-enum class Status : std::uint8_t {
+// [[nodiscard]] because every call that can fail in this library reports it by
+// returning one of these, and there is no other channel: no exceptions outside
+// fms_config, no errno, no callback.  A dropped Status is a dropped failure.
+// The few discards that are deliberate say so with a (void) cast.
+enum class [[nodiscard]] Status : std::uint8_t {
   Ok = 0,
 
   // --- configuration -------------------------------------------------------

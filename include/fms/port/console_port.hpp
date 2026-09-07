@@ -46,7 +46,9 @@ class ConsolePort final : public IPort {
   Status publish_state(StringView state) noexcept override;
   Status publish_error(StringView message) noexcept override;
 
-  const char* last_error() const noexcept override { return "none"; }
+  // last_error() is not overridden: Port's own returns "none" and this port has
+  // no error state to report, so an identical override would only be one more
+  // place to change.
 
  private:
   void print_help() noexcept;

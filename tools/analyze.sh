@@ -125,6 +125,11 @@ analyse_cppcheck() {
   # reader of the source, and pointing it at src/ and include/ keeps it away
   # from the dependency tree entirely.
   #
+  # --inconclusive turns on the nine checkers cppcheck holds back because they
+  # can be wrong.  It reports nothing on this tree, so it costs nothing to leave
+  # on, and cppcheck_report.py already decides what gates - an inconclusive
+  # finding arrives as a finding to read rather than a red build.
+  #
   # No --error-exitcode either.  cppcheck_report.py decides what fails, by
   # severity, because cppcheck's style opinions change between releases and a
   # new patch version inventing a new style check should not be able to turn
@@ -137,6 +142,7 @@ analyse_cppcheck() {
   local engine=0
   cppcheck \
     --enable=warning,style,performance,portability \
+    --inconclusive \
     --std=c++17 \
     --language=c++ \
     --inline-suppr \
