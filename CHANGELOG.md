@@ -6,6 +6,22 @@ numbers promise is in [docs/stability.md](docs/stability.md).
 
 ## Unreleased
 
+### Added
+
+- A test that every `lint::Check` describes itself past the shared prefix.
+  `describe()` switches over `Check` twice — once for the checks about a state,
+  once for the checks about one alternative — and the second ends in
+  `default: return;`. An enumerator added without an arm there builds, and emits
+  the prefix naming the state, trigger and alternative and then stops: a message
+  that says where but never what. The same hazard `tests/test_status.cpp` exists
+  for on `Status`, and nothing covered it.
+
+  The baseline is derived rather than written out: a `Check` value no arm
+  handles produces exactly that truncated message, and every real enumerator has
+  to beat it.
+
+- `lint::Check` slugs are checked for being distinct, not only non-empty.
+
 ### Changed
 
 - **`Status` is `[[nodiscard]]`.** Every call that can fail reports it by
