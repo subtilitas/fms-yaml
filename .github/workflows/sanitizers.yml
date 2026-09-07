@@ -37,9 +37,22 @@ env:
   FETCHCONTENT_BASE_DIR: ${{ github.workspace }}/.deps
 
 jobs:
+  # Both compilers, because they do not carry the same checks.  Clang has
+  # integer, implicit-conversion and nullability, which report arithmetic that
+  # wrapped, a narrowing that actually changed a value, and a null passed where
+  # the type says never - the runtime half of the -Wconversion family the build
+  # enables.  GCC has none of them, and CMakeLists.txt only asks for them when
+  # the compiler is Clang, so without this leg they would be configured and
+  # never run.
   sanitizers:
-    name: sanitizers (ASan + UBSan)
+    name: sanitizers (${{ matrix.name }})
     runs-on: ubuntu-24.04
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - {name: 'ASan + UBSan', cc: gcc-13, cxx: g++-13}
+          - {name: 'ASan + UBSan, clang', cc: clang-18, cxx: clang++-18}
     steps:
       - uses: actions/checkout@v7
 
@@ -47,10 +60,13 @@ jobs:
         uses: actions/cache@v6
         with:
           path: ${{ env.FETCHCONTENT_BASE_DIR }}
-          key: deps-asan-${{ hashFiles('CMakeLists.txt') }}
-          restore-keys: deps-asan-
+          key: deps-asan-${{ matrix.cc }}-${{ hashFiles('CMakeLists.txt') }}
+          restore-keys: deps-asan-${{ matrix.cc }}-
 
       - name: Configure
+        env:
+          CC: ${{ matrix.cc }}
+          CXX: ${{ matrix.cxx }}
         run: |
           cmake -S . -B build-asan \
             -DCMAKE_BUILD_TYPE=Debug \
