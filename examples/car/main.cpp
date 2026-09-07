@@ -219,7 +219,10 @@ int main(int argc, char** argv) {
   // A diagram is about the machine alone, but the entry arrow comes from the
   // setup - which is why this needs both files, like everything else here.
   if (export_diagram) {
-    fms::diagram::render(g_model, g_machine.initial(), format, &write_fragment, nullptr);
+    // Best effort: the diagram goes to stdout, and a writer that refuses it has
+    // already made that visible.  Said with a cast rather than left to look
+    // like an oversight.
+    (void)fms::diagram::render(g_model, g_machine.initial(), format, &write_fragment, nullptr);
     return 0;
   }
 #endif
@@ -272,7 +275,8 @@ int main(int argc, char** argv) {
     }
   }
 
-  g_runtime.stop();
+  // Shutting down on the way out; there is nothing left to report a failure to.
+  (void)g_runtime.stop();
   (void)std::fprintf(stderr,
                      "final state '%s': %u transitions, %u rejected, %u inputs (%u unknown)\n",
                      g_machine.current_name(), g_machine.transition_count(),

@@ -67,6 +67,11 @@ configuration.
   false alarm. One that does not is an unresolved `fms::abi::etl_pin<...>`
   naming the consumer's numbers; `fms_yaml_ETL_VERSION` in the installed
   package config is what the library was built against.
+* **`Status` is `[[nodiscard]]`.** Ignoring one is a compile error, and code
+  that means to ignore one says so with a `(void)` cast. That is a source
+  compatibility change for a consumer that dropped a Status silently, and it is
+  deliberate: a dropped Status is a dropped failure, because there is no other
+  channel to report one on.
 * **The numeric values of `Status` and `lint::Check`.** The enumerators are
   named and their `to_string()` slugs are stable; the underlying numbers are
   not, and a new enumerator may be inserted anywhere. Switch on the names,

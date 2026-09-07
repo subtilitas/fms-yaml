@@ -155,8 +155,10 @@ bool Args::as_bool(StringView name, bool& out) const noexcept {
 }
 
 const Args& Args::none() noexcept {
-  static const Args empty;
-  return empty;
+  // Not named `empty`: that shadows Args::empty(), which reads as a call at a
+  // glance and which cppcheck reports as shadowFunction.
+  static const Args no_arguments;
+  return no_arguments;
 }
 
 }  // namespace fms

@@ -98,7 +98,10 @@ Status Runtime::service(std::uint32_t timeout_ms) noexcept {
     return Status::Ok;
   }
 
-  dispatch(trigger, args_);
+  // The trigger was accepted and consumed; what the transition did is already
+  // counted and published by dispatch itself, and service() reports on the
+  // input rather than on the machine's reaction to it.
+  (void)dispatch(trigger, args_);
   return Status::Ok;
 }
 
@@ -149,7 +152,8 @@ Status Runtime::dispatch(TriggerId trigger, const Args& args) noexcept {
 void Runtime::publish_state(StateId state) noexcept {
   const StateNode* node = model_->state(state);
   if (node != nullptr) {
-    port_->publish_state(view(node->name));
+    // Nothing to do if the port cannot take it: this is the report.
+    (void)port_->publish_state(view(node->name));
   }
 }
 
@@ -168,7 +172,7 @@ void Runtime::publish_rejection(const TransitionEvent& event, const Args& args) 
     append_clipped(scratch_, args.empty() ? cstr("no arguments") : args.raw());
     append_clipped(scratch_, cstr(")"));
   }
-  port_->publish_error(view(scratch_));
+  (void)port_->publish_error(view(scratch_));
 }
 
 void Runtime::publish_bad_arguments(TriggerId trigger, Status reason) noexcept {
@@ -177,14 +181,14 @@ void Runtime::publish_bad_arguments(TriggerId trigger, Status reason) noexcept {
   append_clipped(scratch_, cstr(model_->trigger_name(trigger)));
   append_clipped(scratch_, cstr(": "));
   append_clipped(scratch_, cstr(to_string(reason)));
-  port_->publish_error(view(scratch_));
+  (void)port_->publish_error(view(scratch_));
 }
 
 void Runtime::publish_unknown(StringView channel) noexcept {
   scratch_.clear();
   append_clipped(scratch_, cstr("unknown channel: "));
   append_clipped(scratch_, channel);
-  port_->publish_error(view(scratch_));
+  (void)port_->publish_error(view(scratch_));
 }
 
 }  // namespace fms

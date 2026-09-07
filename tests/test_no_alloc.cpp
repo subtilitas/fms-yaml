@@ -65,23 +65,27 @@ TEST_CASE("the run phase does not touch the heap") {
   fms::alloc_guard::reset_counters();
   fms::alloc_guard::arm(/*fatal=*/false);
 
+  // Every call below returns a Status that this case deliberately drops: what
+  // is under test is that the loop allocates nothing, not what the machine
+  // decides, and the decisions are asserted in test_runtime.cpp.  The casts are
+  // what say so.
   for (int i = 0; i < 250; ++i) {
-    g_port.inject(sv("throttle"));       // accepted
-    g_runtime.service(0);
+    (void)g_port.inject(sv("throttle"));       // accepted
+    (void)g_runtime.service(0);
 
-    g_port.inject(sv("stopped"));        // rejected -> error published
-    g_runtime.service(0);
+    (void)g_port.inject(sv("stopped"));        // rejected -> error published
+    (void)g_runtime.service(0);
 
-    g_port.inject(sv("brake"));          // accepted
-    g_runtime.service(0);
+    (void)g_port.inject(sv("brake"));          // accepted
+    (void)g_runtime.service(0);
 
-    g_port.inject(sv("stopped"));        // accepted, back to standing
-    g_runtime.service(0);
+    (void)g_port.inject(sv("stopped"));        // accepted, back to standing
+    (void)g_runtime.service(0);
 
-    g_port.inject(sv("radio_volume"));   // unknown channel -> error published
-    g_runtime.service(0);
+    (void)g_port.inject(sv("radio_volume"));   // unknown channel -> error published
+    (void)g_runtime.service(0);
 
-    g_runtime.service(0);                // idle poll
+    (void)g_runtime.service(0);                // idle poll
   }
 
   const std::size_t violations = fms::alloc_guard::violations();

@@ -6,6 +6,28 @@ numbers promise is in [docs/stability.md](docs/stability.md).
 
 ## Unreleased
 
+### Changed
+
+- **`Status` is `[[nodiscard]]`.** Every call that can fail reports it by
+  returning one, and there is no other channel — no exceptions outside
+  `fms_config`, no errno, no callback — so a dropped `Status` is a dropped
+  failure. Thirteen call sites here dropped one; all thirteen were deliberate
+  and now say so with a `(void)` cast, and any new one is a compile error.
+  A consumer that ignores a returned `Status` will need the same cast.
+
+### Fixed
+
+- The two findings cppcheck reported and nothing acted on: a local variable in
+  `Args::none()` shadowed `Args::empty()`, and `ConsolePort::last_error()`
+  overrode the base with an identical body. cppcheck now reports nothing on
+  `src/` and `include/`, with `--inconclusive` on.
+
+### Added
+
+- `tools/analyze.sh` runs cppcheck with `--inconclusive`, which turns on the
+  nine checkers it otherwise holds back. It reports nothing on this tree, so it
+  costs nothing to leave on.
+
 ### Added
 
 - The build asks for the warning classes a deep static analyser reports and a
