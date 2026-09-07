@@ -441,7 +441,7 @@ What they add up to, and what is not covered, is in
 | Static analysis | `clang-tidy` (`.clang-tidy`), over `src`, `tests` and `examples` | `ci.yml` → `clang-tidy` |
 | Static analysis | `cppcheck` (`.cppcheck-suppressions`) | `ci.yml` → `cppcheck` |
 | Tooling | `ruff` (`ruff.toml`), `shellcheck`, `actionlint` | `lint.yml` |
-| Runtime analysis | ASan + UBSan over the test suite | `sanitizers.yml` |
+| Runtime analysis | ASan + UBSan over the test suite, on GCC and Clang; Clang adds `integer` and `implicit-conversion` | `sanitizers.yml` |
 | Configuration | the shipped YAML loaded and linted by the real binary | `ctest` → `car_config_check` |
 | Documentation | the README's diagram regenerated and compared | `ctest` → `car_diagram_check` |
 | Documentation | the type sizes the pages quote, measured against the build | `ctest` → `doc_figures` |

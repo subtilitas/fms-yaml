@@ -6,6 +6,22 @@ numbers promise is in [docs/stability.md](docs/stability.md).
 
 ## Unreleased
 
+### Added
+
+- The build asks for the warning classes a deep static analyser reports and a
+  default set does not: implicit narrowing and sign change, casts that discard
+  qualifiers or increase alignment, old-style casts, format-string mismatches,
+  and a fallthrough nobody marked. All are silent on this tree today, so they
+  cost nothing to keep and report it if that stops being true.
+  `-Wswitch-default`, `-Wuseless-cast` and `-Wnull-dereference` are deliberately
+  absent, each for a reason recorded where it would have gone.
+
+- The sanitizers job runs on Clang as well as GCC, and a Clang build adds
+  `integer`, `implicit-conversion` and `nullability`. Those report at runtime
+  what `-Wconversion` can only suspect at compile time — arithmetic that
+  wrapped, and a narrowing that actually changed a value. The suite is clean
+  under them: 153 cases, 1,551 assertions, no report.
+
 ### Fixed
 
 - `assign_checked` and `append_clipped` passed a null pointer to ETL's `assign`

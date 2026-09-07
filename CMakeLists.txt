@@ -98,7 +98,30 @@ function(fms_warnings target)
       target_compile_options(${target} PRIVATE /WX)
     endif()
   else()
-    target_compile_options(${target} PRIVATE -Wall -Wextra -Wpedantic -Wshadow)
+    # The second group is the classes a deep static analyser reports and a
+    # default warning set does not: implicit narrowing and sign changes, casts
+    # that discard qualifiers or increase alignment, a dereference the compiler
+    # can already prove is null.  All of them are silent here today, so they
+    # cost nothing to keep and say so if that stops being true.
+    #
+    # Three neighbours of these are deliberately absent.  -Wnull-dereference
+    # reports inside etl/basic_string.h, etl/vector.h and libstdc++'s
+    # stl_pair.h: GCC runs that analysis after inlining and attributes it to the
+    # header, so -isystem does not silence it and there is nothing here to fix.
+    #   -Wswitch-default would
+    # have every switch over an enumeration grow a default arm, which is what
+    # stops -Wswitch reporting an enumerator nobody handled - the hole
+    # tests/test_status.cpp exists to keep shut.  -Wuseless-cast fires on the
+    # static_cast<int> that pins etl::exception::line_number() to the %d it is
+    # printed with, and that cast is what keeps the pair correct when ETL
+    # changes the return type.
+    target_compile_options(${target} PRIVATE
+      -Wall -Wextra -Wpedantic -Wshadow
+      -Wconversion -Wsign-conversion
+      -Wold-style-cast -Wcast-qual -Wcast-align
+      -Wdouble-promotion -Wformat=2 -Wundef
+      -Wnon-virtual-dtor -Woverloaded-virtual
+      -Wimplicit-fallthrough)
     if(FMS_WARNINGS_AS_ERRORS)
       target_compile_options(${target} PRIVATE -Werror)
     endif()
@@ -136,6 +159,17 @@ function(fms_instrument target)
   if(FMS_ENABLE_SANITIZERS)
     if(MSVC)
       message(FATAL_ERROR "FMS_ENABLE_SANITIZERS requires GCC or Clang")
+    endif()
+    # Clang carries two check groups GCC does not, and they are the runtime
+    # half of the -Wconversion family above: implicit-conversion reports a
+    # narrowing that actually changed a value, which a compile-time warning can
+    # only guess at, and integer reports arithmetic that wrapped.  The Clang leg
+    # of the sanitizers workflow is what runs them.
+    if(CMAKE_CXX_COMPILER_ID MATCHES "Clang")
+      target_compile_options(${target} PRIVATE
+        -fsanitize=integer,implicit-conversion,nullability)
+      target_link_options(${target} PUBLIC
+        -fsanitize=integer,implicit-conversion,nullability)
     endif()
     target_compile_options(${target} PRIVATE
       -fsanitize=address,undefined
