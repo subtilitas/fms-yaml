@@ -19,7 +19,8 @@ numbers promise is in [docs/stability.md](docs/stability.md).
 - The sanitizers job runs on Clang as well as GCC, and a Clang build adds
   `integer`, `implicit-conversion` and `nullability`. Those report at runtime
   what `-Wconversion` can only suspect at compile time — arithmetic that
-  wrapped, and a narrowing that actually changed a value. The suite is clean
+  wrapped, a narrowing that actually changed a value, and a null passed where
+  the type says never. The suite is clean
   under them: 153 cases, 1,551 assertions, no report.
 
 ### Fixed

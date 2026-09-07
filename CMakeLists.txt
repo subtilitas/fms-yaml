@@ -100,8 +100,8 @@ function(fms_warnings target)
   else()
     # The second group is the classes a deep static analyser reports and a
     # default warning set does not: implicit narrowing and sign changes, casts
-    # that discard qualifiers or increase alignment, a dereference the compiler
-    # can already prove is null.  All of them are silent here today, so they
+    # that discard qualifiers or increase alignment, and format strings that do
+    # not match their arguments.  All of them are silent here today, so they
     # cost nothing to keep and say so if that stops being true.
     #
     # Three neighbours of these are deliberately absent.  -Wnull-dereference
@@ -160,11 +160,12 @@ function(fms_instrument target)
     if(MSVC)
       message(FATAL_ERROR "FMS_ENABLE_SANITIZERS requires GCC or Clang")
     endif()
-    # Clang carries two check groups GCC does not, and they are the runtime
+    # Clang carries three check groups GCC does not, and they are the runtime
     # half of the -Wconversion family above: implicit-conversion reports a
     # narrowing that actually changed a value, which a compile-time warning can
-    # only guess at, and integer reports arithmetic that wrapped.  The Clang leg
-    # of the sanitizers workflow is what runs them.
+    # only guess at, integer reports arithmetic that wrapped, and nullability
+    # reports a null passed where the type says never.  The Clang leg of the
+    # sanitizers workflow is what runs them.
     if(CMAKE_CXX_COMPILER_ID MATCHES "Clang")
       target_compile_options(${target} PRIVATE
         -fsanitize=integer,implicit-conversion,nullability)

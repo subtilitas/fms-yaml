@@ -38,11 +38,12 @@ env:
 
 jobs:
   # Both compilers, because they do not carry the same checks.  Clang has
-  # integer and implicit-conversion, which report arithmetic that wrapped and a
-  # narrowing that actually changed a value - the runtime half of the
-  # -Wconversion family the build enables.  GCC has neither, and CMakeLists.txt
-  # only asks for them when the compiler is Clang, so without this leg they
-  # would be configured and never run.
+  # integer, implicit-conversion and nullability, which report arithmetic that
+  # wrapped, a narrowing that actually changed a value, and a null passed where
+  # the type says never - the runtime half of the -Wconversion family the build
+  # enables.  GCC has none of them, and CMakeLists.txt only asks for them when
+  # the compiler is Clang, so without this leg they would be configured and
+  # never run.
   sanitizers:
     name: sanitizers (${{ matrix.name }})
     runs-on: ubuntu-24.04

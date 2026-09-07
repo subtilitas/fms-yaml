@@ -87,7 +87,7 @@ notices.
 |---|---|
 | Built and tested on every push | GCC 13 and Clang 18 on Linux, MSVC 2022 on Windows |
 | Compiled, not run | `fms_core` and `fms_inspect` for a Cortex-M4, no OS |
-| Runtime analysis | ASan and UBSan over the suite, on Linux, with GCC and Clang. Clang adds `integer` and `implicit-conversion`, which GCC does not carry |
+| Runtime analysis | ASan and UBSan over the suite, on Linux, with GCC and Clang. Clang adds `integer`, `implicit-conversion` and `nullability`, which GCC does not carry |
 
 The build asks for more than a default warning set: `-Wconversion`,
 `-Wsign-conversion`, `-Wold-style-cast`, `-Wcast-qual`, `-Wcast-align`,
