@@ -4,10 +4,10 @@
 // inside Model, Setup, Args, Runtime and lint::Report, so they are part of the
 // layout of those types.  A translation unit compiled with different values
 // sees different types under the same names and links against the library
-// anyway: with the defaults sizeof(fms::Model) is 49728, with
-// FMS_MAX_STATES=8 FMS_MAX_TRIGGERS=12 it is 21120, and nothing diagnoses the
-// difference.  The library then writes 49728 bytes into an object the caller
-// allocated 21120 for.
+// anyway: with the defaults sizeof(fms::Model) is 53504, with
+// FMS_MAX_STATES=8 FMS_MAX_TRIGGERS=12 it is 24704, and nothing diagnoses the
+// difference.  The library then writes 53504 bytes into an object the caller
+// allocated 24704 for.
 //
 // So the capacities are pasted into the name of a symbol that fms_core defines
 // once and the constructors of Model, Setup, Args and Runtime reference.  A mismatch is an
@@ -52,9 +52,10 @@
 #define FMS_ABI_ID_07 FMS_ABI_JOIN(FMS_ABI_ID_06, FMS_MAX_NAME_LENGTH)
 #define FMS_ABI_ID_08 FMS_ABI_JOIN(FMS_ABI_ID_07, FMS_MAX_CHANNEL_LENGTH)
 #define FMS_ABI_ID_09 FMS_ABI_JOIN(FMS_ABI_ID_08, FMS_MAX_MESSAGE_LENGTH)
-#define FMS_ABI_ID    FMS_ABI_JOIN(FMS_ABI_ID_09, FMS_MAX_FINDINGS)
+#define FMS_ABI_ID_10 FMS_ABI_JOIN(FMS_ABI_ID_09, FMS_MAX_FINDINGS)
+#define FMS_ABI_ID    FMS_ABI_JOIN(FMS_ABI_ID_10, FMS_MAX_GROUPS)
 
-/// The capacity configuration as an identifier, e.g. `32_32_8_4_3_64_4_31_95_127_32`.
+/// The capacity configuration as an identifier, e.g. `32_32_8_4_3_64_4_31_95_127_32_4`.
 #define FMS_ABI_SYMBOL FMS_ABI_JOIN(fms_abi, FMS_ABI_ID)
 
 #define FMS_ABI_STRINGIFY_(x) #x
@@ -74,7 +75,7 @@ namespace fms::abi {
 /// The capacities this translation unit was compiled with, in the order
 /// FMS_ABI_TAG records them: states, triggers, transitions per state,
 /// alternatives, conditions per guard, conditions, arguments, name length,
-/// channel length, message length, findings.
+/// channel length, message length, findings, groups.
 constexpr const char* tag() noexcept { return FMS_ABI_TAG; }
 
 /// The size of one fixed small instantiation of each ETL container that appears
@@ -86,7 +87,7 @@ constexpr const char* tag() noexcept { return FMS_ABI_TAG; }
 ///
 /// The capacities are not the only thing that decides those layouts.  ETL moved
 /// sizeof(etl::vector) by 8 bytes between its 20.40.0 and 20.40.1 tags with no
-/// interface change, which took sizeof(fms::Model) from 49728 to 47376.  A
+/// interface change, which takes sizeof(fms::Model) from 53504 to 50848.  A
 /// consumer whose ETL differs from the one fms_core was built with sees
 /// different types under the same names, exactly as one differing in a capacity
 /// does, and nothing stops it: find_package(etl) here and find_dependency(etl)

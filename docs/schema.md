@@ -5,7 +5,7 @@ Two files, loaded independently:
 | File | Sections | Loaded into | Answers |
 |---|---|---|---|
 | setup | `fsm`, `io` | `fms::Setup` | where this instance runs, how it talks, where it starts |
-| machine | `triggers`, `states` | `fms::Model` | what it does |
+| machine | `triggers`, `states`, `groups` | `fms::Model` | what it does |
 
 Neither references the other; each loader rejects the other's sections with a
 diagnostic naming the file they belong in. The one cross-file reference — the
@@ -137,6 +137,12 @@ Self-transitions are allowed (`brake_pressed: standing` inside `standing`) and
 are how you say "accepted, but nothing changes". An accepted trigger always
 republishes the state, even when it did not change.
 
+A target is a state name or `~self`. `~self` means the state the trigger arrived
+in: inside a state it is that state, and in a group it is whichever member the
+machine is in. A group cannot be named `~self`. A state can, for compatibility
+with files written before the keyword: a file that declares a state `~self`
+reaches that state with the target `~self`, and has no "stay" keyword.
+
 ### Guards
 
 One comparison against one argument:
@@ -162,13 +168,60 @@ error with a line number. No arithmetic, no nesting, no negation beyond `!=`.
 
 | Situation | `fire()` returns | Reported on the error channel |
 |---|---|---|
-| the state does not list the trigger | `Status::NoTransition` | `rejected: <trigger> in state <state>` |
-| it lists it, but no guard held | `Status::GuardRejected` | `rejected: <trigger> in state <state>: no guard matched (<arguments>)` |
+| neither the state nor its group lists the trigger | `Status::NoTransition` | `rejected: <trigger> in state <state>` |
+| one of them lists it, but no guard held in either | `Status::GuardRejected` | `rejected: <trigger> in state <state>: no guard matched (<arguments>)` |
 | the arguments were malformed | — | `bad arguments for <trigger>: <reason>` |
 | nothing listens on that channel | — | `unknown channel: <channel>` |
 
 The state is unchanged in every case. The guard message includes the arguments,
 because that is what you need when a trigger you expected to work does not.
+
+## `groups` (optional sequence)
+
+A group names states that share transitions. The transitions are written once,
+in the group, and apply to every member.
+
+| Key | Type | Meaning |
+|---|---|---|
+| `name` | string | **required**, unique among states and groups |
+| `states` | sequence of state names | **required**, non-empty; the members |
+| `transitions` | mapping `trigger: outcome` | optional; the same three spellings as a state's |
+
+```yaml
+groups:
+  - name: running
+    states: [standing, accelerating, coasting, braking]
+    transitions:
+      engine_fault:
+        - {when: "severity >= 2", target: fault}
+        - {target: ~self}            # every member stays where it is
+```
+
+A trigger is looked up in two places, in this order:
+
+1. The current state's own transitions. The first alternative whose guard holds
+   is taken.
+2. Its group's transitions, when the state does not list the trigger or none of
+   its own guards held.
+
+So a member overrides the group by listing the trigger itself. With an
+unguarded alternative it overrides the group completely. With guarded
+alternatives only, it overrides the group only when one of its guards holds.
+
+| Rule | Refused with |
+|---|---|
+| a member that is not a declared state | `UnknownState` |
+| a state listed in two groups | `DuplicateName`, naming the first group |
+| a group named like a state or another group | `DuplicateName` |
+| `states` missing or empty | `SchemaError` |
+| a group named `~self` | `SchemaError` |
+| more than `FMS_MAX_GROUPS` groups | `CapacityExceeded` |
+
+A group is not a state. The machine is never "in" a group, a group is never a
+target, `fsm.initial` cannot name one, and groups do not contain groups. A
+group's transitions are not copied into its members, so they do not count
+toward `FMS_MAX_TRANSITIONS_PER_STATE`; the group has its own
+`FMS_MAX_TRANSITIONS_PER_STATE` triggers.
 
 ---
 
@@ -229,6 +282,7 @@ truncation. Defaults from `include/fms/limits.hpp`:
 | `FMS_MAX_CONDITIONS_PER_GUARD` | 3 | conditions ANDed in one `when` |
 | `FMS_MAX_CONDITIONS` | 64 | machine-wide condition pool |
 | `FMS_MAX_ARGUMENTS` | 4 | `key=value` pairs one trigger may carry |
+| `FMS_MAX_GROUPS` | 4 | groups per machine, 1 to 254 |
 | `FMS_MAX_NAME_LENGTH` | 31 | |
 | `FMS_MAX_CHANNEL_LENGTH` | 95 | |
 | `FMS_MAX_MESSAGE_LENGTH` | 127 | |

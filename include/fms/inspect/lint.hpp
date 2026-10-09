@@ -57,6 +57,11 @@ enum class Check : std::uint8_t {
   /// An earlier alternative for the same trigger has exactly the same guard,
   /// so it wins every time this one would have.
   ShadowedAlternative,
+
+  /// A group lists a trigger, and every member state lists the same trigger
+  /// with an unguarded alternative of its own.  The state is asked first and
+  /// always answers, so the group's transition is never taken.
+  OverriddenGroupTransition,
 };
 
 enum class Severity : std::uint8_t {
@@ -65,11 +70,13 @@ enum class Severity : std::uint8_t {
 };
 
 /// One thing found, as coordinates into the model rather than as text - so a
-/// caller can format it, count it, or ignore it by kind.  `state`, `trigger`
-/// and `alternative` are filled in only where they apply.
+/// caller can format it, count it, or ignore it by kind.  `state`, `group`,
+/// `trigger` and `alternative` are filled in only where they apply.  A finding
+/// about a group's transitions has `group` set and `state` left at kNoState.
 struct Finding {
   Check         check       = Check::UnreachableState;
   StateId       state       = kNoState;
+  GroupId       group       = kNoGroup;
   TriggerId     trigger     = kNoTrigger;
   std::uint8_t  alternative = 0;  ///< 1-based position in the file's list
   /// Second party to the finding: the alternative that shadows this one, or

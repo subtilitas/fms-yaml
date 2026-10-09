@@ -8,6 +8,46 @@ numbers promise is in [docs/stability.md](docs/stability.md).
 
 ### Added
 
+- **Groups.** A machine file may declare `groups`: a name, its member `states`
+  and the `transitions` they share, written once instead of once per member.
+  A trigger is looked up in the current state first and in its group second,
+  so a member overrides the group by listing the trigger itself. A state
+  belongs to at most one group; a group is never a target and never contains
+  a group. Group transitions are stored once in `Model::groups()`, not copied
+  into the members. See [docs/schema.md](docs/schema.md#groups-optional-sequence).
+- **`~self` as a target**: the state the trigger arrived in. In a group it
+  keeps each member where it is. A file that declares a state named `~self`
+  reaches that state with it, as before.
+- `Model::declare_group`, `add_to_group`, `add_group_transition`, `group`,
+  `group_of`, `find_group`, `group_name`, `group_count`, and an `evaluate`
+  overload that reports the group whose alternative was taken.
+  `TransitionEvent::group` carries the same, and `car_console` prints it in
+  its trace: `[standing --engine_fault (running)--> fault]`.
+- `FMS_MAX_GROUPS`, default 4, range 1 to 254. It is part of the capacity tag,
+  which gains a twelfth field: `32_32_8_4_3_64_4_31_95_127_32_4`.
+- Lint check `overridden-group-transition` (error): every member lists the
+  trigger with an unguarded alternative, so the group's transition is never
+  taken. The other checks follow group transitions too, and a finding about a
+  group's alternative carries `Finding::group`.
+- `--export mermaid` draws a group as a composite state and each group
+  transition as one edge leaving it. `--export dot` draws a cluster, with
+  `compound=true` and `ltail`. Output for a machine without groups is
+  unchanged.
+- The car example groups `standing`, `accelerating`, `coasting` and `braking`
+  as `running`, which states the engine-fault rule once. Its behaviour is
+  unchanged.
+
+### Changed
+
+- `sizeof(fms::Model)` at the default capacities is 53 504 B with ETL
+  20.39.0 – 20.40.0 and 50 848 B with 20.40.1 and later, up from 49 728 B and
+  47 376 B: four `GroupNode`s of 736 B, their name index, and one byte per
+  `StateNode`.
+- `Model::accepts`, `evaluate` and `target_of` include group transitions.
+  Code that reads `StateNode::transitions` directly sees only a state's own.
+
+### Added
+
 - A test that every `lint::Check` describes itself past the shared prefix.
   `describe()` switches over `Check` twice — once for the checks about a state,
   once for the checks about one alternative — and the second ends in

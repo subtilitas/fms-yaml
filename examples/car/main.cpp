@@ -51,10 +51,18 @@ namespace {
 void trace(void* user, const fms::TransitionEvent& event) {
   const auto* model = static_cast<const fms::Model*>(user);
 
-  if (event.accepted) {
-    (void)std::fprintf(stderr, "  [%s --%s--> %s]\n", model->state_name(event.from),
-                       model->trigger_name(event.trigger), model->state_name(event.to));
+  if (!event.accepted) {
+    return;
   }
+  // A transition the state inherited names the group it came from.
+  if (event.group != fms::kNoGroup) {
+    (void)std::fprintf(stderr, "  [%s --%s (%s)--> %s]\n", model->state_name(event.from),
+                       model->trigger_name(event.trigger), model->group_name(event.group),
+                       model->state_name(event.to));
+    return;
+  }
+  (void)std::fprintf(stderr, "  [%s --%s--> %s]\n", model->state_name(event.from),
+                     model->trigger_name(event.trigger), model->state_name(event.to));
 }
 
 /// Reports a failed load with the file it came from, so a two-file setup does
@@ -76,14 +84,37 @@ void report(const char* path, fms::Status status, const fms::config::Diagnostics
 void describe(const fms::Setup& setup, const fms::Model& model, const fms::StateMachine& machine) {
   std::printf("setup   : instance '%s', starts in '%s'\n", setup.name().c_str(),
               setup.initial_name().c_str());
-  std::printf("machine : '%s', %zu states, %zu triggers, %zu guard conditions\n",
+  std::printf("machine : '%s', %zu states, %zu triggers, %zu guard conditions",
               model.name().c_str(), model.state_count(), model.trigger_count(),
               model.condition_count());
+  if (model.group_count() > 0) {
+    std::printf(", %zu group(s)", model.group_count());
+  }
+  std::putchar('\n');
 
   for (const auto& entry : model.states()) {
     const fms::StateId id = entry.first;
     std::printf("  %-13s %s%zu trigger(s)", model.state_name(id),
                 (id == machine.initial()) ? "* " : "  ", entry.second.transitions.size());
+    for (const auto& transition : entry.second.transitions) {
+      std::printf(" %s", model.trigger_name(transition.first));
+      if (transition.second.size() > 1) {
+        std::printf("(%zu)", transition.second.size());
+      }
+    }
+    std::putchar('\n');
+  }
+
+  // A group's line lists its members after the colon, then the triggers they
+  // share, counted the same way as a state's.
+  for (const auto& entry : model.groups()) {
+    std::printf("  %-13s   group:", entry.second.name.c_str());
+    for (const auto& state : model.states()) {
+      if (state.second.group == entry.first) {
+        std::printf(" %s", state.second.name.c_str());
+      }
+    }
+    std::printf("; %zu trigger(s)", entry.second.transitions.size());
     for (const auto& transition : entry.second.transitions) {
       std::printf(" %s", model.trigger_name(transition.first));
       if (transition.second.size() > 1) {

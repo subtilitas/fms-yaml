@@ -45,6 +45,13 @@ using Sink = void (*)(void* user, StringView text);
 /// `[otherwise]`, because on the page the file's ordering is the only thing
 /// that says which edge is the fallback.
 ///
+/// A group with members is a box around them - a Mermaid composite state, a
+/// Graphviz cluster - and each of the group's alternatives is one edge leaving
+/// the box.  A `~self` group transition is a loop on the box in Mermaid and a
+/// line in the cluster's label in Graphviz.  A group without members is not
+/// drawn.  A machine without groups has no box, no `state` block and no
+/// `compound` attribute.
+///
 ///   Status::Ok               rendered
 ///   Status::InvalidArgument  no sink
 Status render(const Model& model, StateId initial, Format format, Sink sink,

@@ -57,13 +57,16 @@ Status StateMachine::fire(TriggerId trigger, const Args& args, TransitionEvent& 
   out.trigger = trigger;
 
   // One binary search in the current state's transition table, then the
-  // alternatives in file order.  That is the whole decision.
+  // alternatives in file order; the same again in its group's table if the
+  // state had no answer.  That is the whole decision.
   StateId        target   = kNoState;
-  const Decision decision = model_->evaluate(current_, trigger, args, target);
+  GroupId        via      = kNoGroup;
+  const Decision decision = model_->evaluate(current_, trigger, args, target, via);
 
   if (decision == Decision::Accepted) {
     current_     = target;
     out.to       = target;
+    out.group    = via;
     out.accepted = true;
     ++transition_count_;
     return Status::Ok;

@@ -4,14 +4,15 @@
 //
 //   fire(trigger, args) ->  Status::Ok            an alternative held; the state
 //                                                 changed, see the event
-//                       ->  Status::NoTransition  the current state does not list
-//                                                 this trigger at all
+//                       ->  Status::NoTransition  neither the current state nor
+//                                                 its group lists this trigger
 //                       ->  Status::GuardRejected it lists it, but no guard held
 //
 // In every rejecting case the state is unchanged.  Guards are declarative
 // comparisons over the trigger's arguments (see condition.hpp), so there is
 // still no application code in the decision - and no actions, no timers, no
-// hierarchy.  Nothing here allocates, throws or blocks.
+// hierarchy: a group shares transitions between states, and the machine is
+// always in exactly one state.  Nothing here allocates, throws or blocks.
 #ifndef FMS_STATE_MACHINE_HPP
 #define FMS_STATE_MACHINE_HPP
 
@@ -31,6 +32,9 @@ struct TransitionEvent {
   /// telling apart from "unknown here", because it usually means the arguments
   /// were not what the machine was waiting for.
   bool guard_rejected = false;
+  /// The group whose transition was taken, or kNoGroup when the state's own
+  /// was - or when nothing was taken.
+  GroupId group = kNoGroup;
 };
 
 class StateMachine {

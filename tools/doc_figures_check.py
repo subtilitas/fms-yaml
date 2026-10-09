@@ -9,7 +9,7 @@ work through what an ODR mismatch costs; include/fms/abi.hpp and
 tools/abi_guard_check.sh repeat that pair in their own comments.  All of them
 are correct for the pinned ETL at the default capacities, and nothing checked
 any of them.  ETL moved sizeof(etl::vector) by 8 bytes between its 20.40.0 and
-20.40.1 tags, which takes sizeof(fms::Model) from 49 728 to 47 376, so a pin
+20.40.1 tags, which takes sizeof(fms::Model) from 53 504 to 50 848, so a pin
 that moved would leave every one of those pages describing a build nobody
 makes.
 
@@ -68,6 +68,7 @@ PROBE = """
 int main() {
   std::printf("fms::Model %zu\\n", sizeof(fms::Model));
   std::printf("fms::StateNode %zu\\n", sizeof(fms::StateNode));
+  std::printf("fms::GroupNode %zu\\n", sizeof(fms::GroupNode));
   std::printf("fms::Condition %zu\\n", sizeof(fms::Condition));
   std::printf("fms::Alternative %zu\\n", sizeof(fms::Alternative));
   std::printf("fms::Setup %zu\\n", sizeof(fms::Setup));

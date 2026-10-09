@@ -75,12 +75,13 @@ struct Linted {
 /// the enum's - adding an enumerator to lint.hpp and not to this list compiles,
 /// and the cases below would then simply not cover it.  What notices is the
 /// slug case, which asserts that the value one past the end of this list is
-/// still unhandled: give a seventh enumerator a slug without adding it here and
+/// still unhandled: give an eighth enumerator a slug without adding it here and
 /// that assertion fails.
-const etl::array<fms::lint::Check, 6> kAllChecks = {
+const etl::array<fms::lint::Check, 7> kAllChecks = {
     fms::lint::Check::UnreachableState,       fms::lint::Check::DeadEndState,
     fms::lint::Check::UnusedTrigger,          fms::lint::Check::UnreachableAlternative,
     fms::lint::Check::ImpossibleGuard,        fms::lint::Check::ShadowedAlternative,
+    fms::lint::Check::OverriddenGroupTransition,
 };
 
 /// True when the message filled its buffer, so text past that point was cut and

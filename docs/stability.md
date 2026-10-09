@@ -56,7 +56,7 @@ configuration.
   the capacities in `limits.hpp`, which are template arguments of the containers
   inside them, and ETL, which decides what those containers cost. ETL moved
   `sizeof(etl::vector)` by 8 bytes between its 20.40.0 and 20.40.1 tags with no
-  interface change, taking `sizeof(fms::Model)` from 49 728 to 47 376. The
+  interface change, taking `sizeof(fms::Model)` from 53 504 to 50 848. The
   library is distributed as source for both reasons, and `fms/abi.hpp` makes
   either mismatch a link error — see
   [the capacity guard](architecture.md#the-capacity-guard).
