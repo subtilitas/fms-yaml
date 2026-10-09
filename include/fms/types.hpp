@@ -13,9 +13,16 @@ namespace fms {
 
 using StateId   = std::uint16_t;
 using TriggerId = std::uint16_t;
+using GroupId   = std::uint8_t;
 
 inline constexpr StateId   kNoState   = 0xFFFFu;
 inline constexpr TriggerId kNoTrigger = 0xFFFFu;
+inline constexpr GroupId   kNoGroup   = 0xFFu;
+
+/// A transition target meaning "the state the machine is in".  Written `~self`
+/// in a machine file.  It lets a group say "stay where you are" for each of its
+/// members; Model::evaluate resolves it to the state the trigger arrived in.
+inline constexpr StateId kSelfState = 0xFFFEu;
 
 using Name    = etl::string<limits::kMaxNameLength>;
 using Channel = etl::string<limits::kMaxChannelLength>;

@@ -4,7 +4,7 @@
 
 ```
 car.setup.yaml     fsm (name, initial) + io       -->  fms::Setup   where it runs
-car.machine.yaml   triggers + states + guards     -->  fms::Model   what it does
+car.machine.yaml   triggers + states + groups     -->  fms::Model   what it does
                                                         |
                           StateMachine::init(model, setup)
                                                         |
@@ -47,8 +47,17 @@ reachability when looking at a machine file alone.
 | `unreachable-alternative` | error | follows an unguarded alternative |
 | `impossible-guard` | error | the ANDed conditions cannot all hold |
 | `shadowed-alternative` | error | an earlier guard holds whenever this one does |
+| `overridden-group-transition` | error | every member lists the trigger with an unguarded alternative |
 | `dead-end-state` | warning | no transition to another state |
-| `unused-trigger` | warning | declared, listed by no state |
+| `unused-trigger` | warning | declared, listed by no state and no group |
+
+Groups are seen the way `Model::evaluate` sees them. Reachability and
+`dead-end-state` follow a state's own transitions and its group's, with `~self`
+resolved to the state itself, so `~self` never leads anywhere. The three
+alternative checks run over each group's transitions as over a state's, and the
+finding carries `Finding::group` instead of `Finding::state`.
+`overridden-group-transition` reports a group transition no member ever
+reaches; a group with no members reports every transition it has.
 
 Severity is a property of the check, not of the machine; the caller decides the
 exit code. Reachability ignores guards — whether a guard ever holds is
@@ -74,6 +83,21 @@ fundamental wins.
 
 `fms::diagram::render` builds the picture from the loaded `Model`, one edge per
 alternative, so it cannot disagree with the file it came from.
+
+A group with members is a box around them, and each of its alternatives is one
+edge leaving the box:
+
+| | Mermaid | Graphviz |
+|---|---|---|
+| the box | `state <group> { <members> }`, membership only | `subgraph "cluster_<group>"`, with `compound=true` |
+| a group edge | `<group> --> <target>`, written at the top level | from the first member, with `ltail="cluster_<group>"` |
+| `~self` in a group | a loop, `<group> --> <group>` | a line `<trigger> [<guard>] / stay` in the cluster label |
+| `~self` in a state | a loop on that state | a loop on that state |
+
+Every edge is written after the group blocks, at the top level, because that is
+where Mermaid draws an edge between a member and a state outside the box. A
+machine without groups has no `state` block in Mermaid and no `compound`
+attribute in Graphviz. A group with no members is left out of the picture.
 
 Output goes to a `Sink` one fragment at a time rather than into a buffer: no
 maximum size, no allocation. Escaping is per format — Mermaid reads a label as
@@ -111,25 +135,35 @@ pair cannot be passed.
 
 ```cpp
 Decision Model::evaluate(StateId from, TriggerId trigger, const Args& args,
-                         StateId& target) const {
-  const auto it = state(from)->transitions.find(trigger);   // binary search
-  if (it == end) return Decision::NoTransition;
-
-  for (const Alternative& a : it->second) {                 // file order
-    if (all conditions of a hold for args) {                // ANDed
-      target = a.target;
-      return Decision::Accepted;
+                         StateId& target, GroupId& via) const {
+  bool listed = false;
+  for (table : {state(from)->transitions,                   // the state first,
+                group(state(from)->group)->transitions}) {  // then its group
+    const auto it = table.find(trigger);                    // binary search
+    if (it == end) continue;
+    listed = true;
+    for (const Alternative& a : it->second) {               // file order
+      if (all conditions of a hold for args) {              // ANDed
+        target = (a.target == kSelfState) ? from : a.target;
+        via    = (table is the group's) ? the group : kNoGroup;
+        return Decision::Accepted;
+      }
     }
   }
-  return Decision::GuardRejected;
+  return listed ? Decision::GuardRejected : Decision::NoTransition;
 }
 ```
 
-`StateMachine::fire()` assigns the result to `current_` or returns
-`NoTransition` / `GuardRejected`. Cost of one input: one `find` from channel to
-trigger id, one from trigger id to alternatives, then at most
-`FMS_MAX_ALTERNATIVES × FMS_MAX_CONDITIONS_PER_GUARD` comparisons, all over
-contiguous memory.
+`StateMachine::fire()` assigns the result to `current_` and the group to
+`TransitionEvent::group`, or returns `NoTransition` / `GuardRejected`. Cost of
+one input: one `find` from channel to trigger id, at most two from trigger id to
+alternatives, then at most `2 × FMS_MAX_ALTERNATIVES ×
+FMS_MAX_CONDITIONS_PER_GUARD` comparisons, all over contiguous memory.
+
+A group is a lookup table, not a state. There is one level of them, a state is
+in at most one, and the machine's current state is always an ordinary state, so
+there is no entry into a group, no exit from one, and no history. That keeps the
+run phase one or two binary searches and leaves `current()` a single id.
 
 ## Guards
 
@@ -269,8 +303,9 @@ Default limits (32 states, 32 triggers, 8 transitions per state), x86-64:
 
 | Type | Size | |
 |---|---|---|
-| `fms::Model` | 49 728 B | states, triggers and the condition pool |
-| `fms::StateNode` | 736 B | |
+| `fms::Model` | 53 504 B | states, triggers, groups and the condition pool |
+| `fms::StateNode` | 744 B | |
+| `fms::GroupNode` | 736 B | one per `FMS_MAX_GROUPS`, 4 by default |
 | `fms::Condition` | 136 B | two fixed-size names dominate |
 | `fms::Alternative` | 6 B | which is the point of interning conditions |
 | `fms::Setup` | 576 B | |
@@ -284,7 +319,7 @@ id — together these roughly doubled `Model` when guards were added.
 
 Tuned to the car config (`-DFMS_MAX_STATES=8 -DFMS_MAX_TRIGGERS=12
 -DFMS_MAX_TRANSITIONS_PER_STATE=5 -DFMS_MAX_CHANNEL_LENGTH=31
--DFMS_MAX_CONDITIONS=16`), `fms::Model` is 11 328 B.
+-DFMS_MAX_CONDITIONS=16`), `fms::Model` is 14 048 B.
 
 ## The two hard constraints, checked on the artefacts
 
@@ -320,17 +355,17 @@ Two translation units that disagree about one see different types under the same
 names, and the link succeeds:
 
 ```
-sizeof(fms::Model)   49 728 B   defaults
-sizeof(fms::Model)   21 120 B   FMS_MAX_STATES=8 FMS_MAX_TRIGGERS=12
+sizeof(fms::Model)   53 504 B   defaults
+sizeof(fms::Model)   24 704 B   FMS_MAX_STATES=8 FMS_MAX_TRIGGERS=12
 ```
 
-The library then writes 49 728 bytes into an object the caller reserved 21 120
+The library then writes 53 504 bytes into an object the caller reserved 24 704
 for. Nothing in the type system, the compiler or the linker objects.
 
 Two things prevent it. Inside the build, a capacity is a cache variable that
 becomes a `PUBLIC` compile definition on `fms_core`, so `cmake -DFMS_MAX_STATES=8`
 reaches every target that links it — the same treatment `ETL_LOG_ERRORS` gets,
-for the same reason. Outside the build, `fms/abi.hpp` pastes all eleven
+for the same reason. Outside the build, `fms/abi.hpp` pastes all twelve
 capacities into the name of a symbol that `fms_core` defines once and the
 constructors of `Model` and `Setup` reference:
 
@@ -355,7 +390,7 @@ fails on those instead.
 The capacities are not the only thing that decides these layouts. ETL decides
 what the containers themselves cost: `sizeof(etl::vector)` lost 8 bytes between
 its 20.40.0 and 20.40.1 tags with no interface change, which took
-`sizeof(fms::Model)` from 49 728 to 47 376. A consumer whose ETL differs from
+`sizeof(fms::Model)` from 53 504 to 50 848. A consumer whose ETL differs from
 the one `fms_core` was built with is the same mismatch as one differing in a
 capacity, and neither `find_package(etl)` here nor `find_dependency(etl)` in the
 exported package states a version that would prevent it.
@@ -406,8 +441,10 @@ both link checks still report ok.
 | `test_loader.cpp` | every machine-file schema and reference error, malformed YAML, oversized names |
 | `test_runtime.cpp` | channel routing, error feedback, `configure()` before `open()`, trace hook, end of input |
 | `test_no_alloc.cpp` | the heap trap |
+| `test_groups.cpp` | loading groups and every refusal, the lookup order, `~self`, the group named in `TransitionEvent`, the group capacity |
 | `test_lint.cpp` | every check, on machines that load without complaint, plus a full report |
 | `test_diagram.cpp` | both formats, guard labels, the fallback label, escaping |
+| `test_groups_inspect.cpp` | groups in the linter and in both diagram formats |
 | `test_abi.cpp` | the capacity tag lists every capacity, in the order the symbol name pastes them |
 | `car_console_pipe` (ctest) | the example driven by a scripted session on stdin, stdout compared with `tests/car_session.expected` |
 | `car_config_check` (ctest) | the shipped configuration loaded *and linted* by the real binary |

@@ -376,7 +376,8 @@ set(FMS_CAPACITIES
   FMS_MAX_NAME_LENGTH
   FMS_MAX_CHANNEL_LENGTH
   FMS_MAX_MESSAGE_LENGTH
-  FMS_MAX_FINDINGS)
+  FMS_MAX_FINDINGS
+  FMS_MAX_GROUPS)
 
 foreach(capacity IN LISTS FMS_CAPACITIES)
   if(DEFINED ${capacity})
@@ -503,6 +504,7 @@ if(FMS_BUILD_TESTS)
     tests/test_state_machine.cpp
     tests/test_setup.cpp
     tests/test_loader.cpp
+    tests/test_groups.cpp
     tests/test_guards.cpp
     tests/test_runtime.cpp
     tests/test_no_alloc.cpp)
@@ -515,7 +517,8 @@ if(FMS_BUILD_TESTS)
     target_link_libraries(fms_tests PRIVATE fms_console)
   endif()
   if(FMS_BUILD_INSPECT)
-    target_sources(fms_tests PRIVATE tests/test_lint.cpp tests/test_diagram.cpp)
+    target_sources(fms_tests PRIVATE tests/test_lint.cpp tests/test_diagram.cpp
+      tests/test_groups_inspect.cpp)
     target_link_libraries(fms_tests PRIVATE fms_inspect)
   endif()
   # FMS_BINARY_DIR is where a test may create something: the source tree is read

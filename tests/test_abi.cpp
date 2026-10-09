@@ -37,7 +37,7 @@ TEST_CASE("the abi tag records every capacity, in order") {
   // The order here is the order fms/abi.hpp pastes them in.  A capacity added
   // to limits.hpp and not to both places is a configuration two translation
   // units can differ in without the linker noticing.
-  const etl::array<std::size_t, 11> capacities = {
+  const etl::array<std::size_t, 12> capacities = {
       fms::limits::kMaxStates,
       fms::limits::kMaxTriggers,
       fms::limits::kMaxTransitionsPerState,
@@ -49,6 +49,7 @@ TEST_CASE("the abi tag records every capacity, in order") {
       fms::limits::kMaxChannelLength,
       fms::limits::kMaxMessageLength,
       fms::limits::kMaxFindings,
+      fms::limits::kMaxGroups,
   };
 
   std::string expected;

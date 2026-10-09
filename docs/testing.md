@@ -169,7 +169,7 @@ types that hold ETL containers by value:
 | | 20.39.0 – 20.40.0 | 20.40.1 – 20.48.1 |
 |---|---:|---:|
 | `etl::vector<int,8>` | 64 | 56 |
-| `fms::Model` | 49 728 | 47 376 |
+| `fms::Model` | 53 504 | 50 848 |
 | `fms::Args` | 464 | 456 |
 | `fms::Runtime` | 688 | 680 |
 | `fms::Setup` | 576 | 576 |

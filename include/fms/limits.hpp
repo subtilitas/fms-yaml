@@ -68,6 +68,13 @@
 #define FMS_MAX_MESSAGE_LENGTH 127
 #endif
 
+// How many groups one machine may declare.  A group is a set of states that
+// share transitions; each state belongs to at most one.  Group ids are one byte,
+// so the ceiling is 254.
+#ifndef FMS_MAX_GROUPS
+#define FMS_MAX_GROUPS 4
+#endif
+
 // How many findings one lint run records before it gives up.  This is not part
 // of the machine - a Model does not contain a report - so only a caller that
 // asks for one pays for it.
@@ -88,6 +95,9 @@ inline constexpr std::size_t kMaxAlternatives        = FMS_MAX_ALTERNATIVES;
 inline constexpr std::size_t kMaxConditionsPerGuard  = FMS_MAX_CONDITIONS_PER_GUARD;
 inline constexpr std::size_t kMaxConditions          = FMS_MAX_CONDITIONS;
 inline constexpr std::size_t kMaxFindings            = FMS_MAX_FINDINGS;
+inline constexpr std::size_t kMaxGroups              = FMS_MAX_GROUPS;
+
+static_assert(kMaxGroups >= 1 && kMaxGroups < 0xFFu, "FMS_MAX_GROUPS must be 1..254");
 
 }  // namespace fms::limits
 

@@ -195,17 +195,29 @@ TEST_CASE("the shipped car machine renders every alternative") {
   REQUIRE(fms::diagram::render(model, setup.initial_in(model), fms::diagram::Format::Mermaid,
                                &Collected::sink, &collected) == fms::Status::Ok);
 
-  // One line per alternative, plus the header and the entry arrow.
+  // One line per alternative, a state's or a group's, plus the header and the
+  // entry arrow.  Each group adds its block: an opening line, one line per
+  // member and a closing line.
   std::size_t alternatives = 0;
   for (const auto& entry : model.states()) {
     for (const auto& transition : entry.second.transitions) {
       alternatives += transition.second.size();
     }
   }
+  std::size_t block_lines = 0;
+  for (const auto& entry : model.groups()) {
+    for (const auto& transition : entry.second.transitions) {
+      alternatives += transition.second.size();
+    }
+    block_lines += 2;
+  }
+  for (const auto& entry : model.states()) {
+    block_lines += (entry.second.group != fms::kNoGroup) ? 1U : 0U;
+  }
   const std::size_t lines =
       static_cast<std::size_t>(std::count(collected.text.begin(), collected.text.end(), '\n'));
 
-  CHECK(lines == alternatives + 2);
+  CHECK(lines == alternatives + block_lines + 2);
   CHECK(has(collected.text, "    [*] --> power_off\n"));
   CHECK(has(collected.text, "    self_test --> standing: self_test_passed [errors == 0]\n"));
   CHECK(has(collected.text, "    self_test --> fault: self_test_passed [otherwise]\n"));

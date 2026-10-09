@@ -30,6 +30,17 @@ bool record(Report& report, const Finding& finding) noexcept {
   return true;
 }
 
+/// The transitions a state inherits from its group, or null.
+const TransitionMap* inherited(const Model& model, const StateNode& node) noexcept {
+  const GroupNode* group = model.group(node.group);
+  return (group == nullptr) ? nullptr : &group->transitions;
+}
+
+/// Where an alternative leads from `from`: kSelfState is `from` itself.
+StateId resolve(StateId from, const Alternative& alternative) noexcept {
+  return (alternative.target == kSelfState) ? from : alternative.target;
+}
+
 // ---------------------------------------------------------------------------
 // reachability
 // ---------------------------------------------------------------------------
@@ -60,12 +71,22 @@ bool check_reachability(const Model& model, StateId initial, Report& report) noe
     if (node == nullptr) {
       continue;
     }
-    for (const auto& transition : node->transitions) {
-      for (const Alternative& alternative : transition.second) {
-        const StateId target = alternative.target;
-        if (target < limits::kMaxStates && !reached[target]) {
-          reached[target] = true;
-          pending.push_back(target);
+    // Its own transitions and the ones its group gives it.  Whether a state's
+    // own alternative overrides the group's is a guard question, and guards
+    // are ignored here.
+    const etl::array<const TransitionMap*, 2> tables = {&node->transitions,
+                                                        inherited(model, *node)};
+    for (const TransitionMap* table : tables) {
+      if (table == nullptr) {
+        continue;
+      }
+      for (const auto& transition : *table) {
+        for (const Alternative& alternative : transition.second) {
+          const StateId target = resolve(from, alternative);
+          if (target < limits::kMaxStates && !reached[target]) {
+            reached[target] = true;
+            pending.push_back(target);
+          }
         }
       }
     }
@@ -92,10 +113,17 @@ bool check_dead_ends(const Model& model, Report& report) noexcept {
     const StateId id = entry.first;
 
     bool leaves = false;
-    for (const auto& transition : entry.second.transitions) {
-      for (const Alternative& alternative : transition.second) {
-        if (alternative.target != id) {
-          leaves = true;
+    const etl::array<const TransitionMap*, 2> tables = {&entry.second.transitions,
+                                                        inherited(model, entry.second)};
+    for (const TransitionMap* table : tables) {
+      if (table == nullptr) {
+        continue;
+      }
+      for (const auto& transition : *table) {
+        for (const Alternative& alternative : transition.second) {
+          if (resolve(id, alternative) != id) {
+            leaves = true;
+          }
         }
       }
     }
@@ -116,12 +144,18 @@ bool check_dead_ends(const Model& model, Report& report) noexcept {
 bool check_unused_triggers(const Model& model, Report& report) noexcept {
   etl::array<bool, limits::kMaxTriggers> used{};
 
-  for (const auto& entry : model.states()) {
-    for (const auto& transition : entry.second.transitions) {
+  const auto mark = [&used](const TransitionMap& transitions) {
+    for (const auto& transition : transitions) {
       if (transition.first < limits::kMaxTriggers) {
         used[transition.first] = true;
       }
     }
+  };
+  for (const auto& entry : model.states()) {
+    mark(entry.second.transitions);
+  }
+  for (const auto& entry : model.groups()) {
+    mark(entry.second.transitions);
   }
 
   bool room = true;
@@ -334,7 +368,7 @@ bool guard_impossible(const Model& model, const Alternative& alternative) noexce
 /// At most one finding per alternative, and the most fundamental one wins: an
 /// alternative nothing can reach is not also reported for the guard it holds,
 /// because fixing the reachability is what makes that guard matter again.
-bool check_alternatives(const Model& model, StateId state, TriggerId trigger,
+bool check_alternatives(const Model& model, StateId state, GroupId group, TriggerId trigger,
                         const Alternatives& alternatives, Report& report) noexcept {
   bool         room     = true;
   std::uint8_t fallback = 0;  // 1-based position of the first unguarded entry
@@ -344,6 +378,7 @@ bool check_alternatives(const Model& model, StateId state, TriggerId trigger,
 
     Finding finding;
     finding.state       = state;
+    finding.group       = group;
     finding.trigger     = trigger;
     finding.alternative = static_cast<std::uint8_t>(i + 1);
 
@@ -374,6 +409,45 @@ bool check_alternatives(const Model& model, StateId state, TriggerId trigger,
   return room;
 }
 
+bool has_fallback(const Alternatives& alternatives) noexcept {
+  for (const Alternative& alternative : alternatives) {
+    if (alternative.condition_count == 0) {
+      return true;
+    }
+  }
+  return false;
+}
+
+/// A group transition no member ever asks for: each member lists the trigger
+/// itself, with an unguarded alternative, so the member always answers first.
+/// A group without members is the same case - nobody asks.
+bool check_group_overrides(const Model& model, Report& report) noexcept {
+  bool room = true;
+  for (const auto& group : model.groups()) {
+    for (const auto& transition : group.second.transitions) {
+      bool reached = false;
+      for (const auto& state : model.states()) {
+        if (state.second.group != group.first) {
+          continue;
+        }
+        const auto own = state.second.transitions.find(transition.first);
+        if (own == state.second.transitions.end() || !has_fallback(own->second)) {
+          reached = true;
+          break;
+        }
+      }
+      if (!reached) {
+        Finding finding;
+        finding.check   = Check::OverriddenGroupTransition;
+        finding.group   = group.first;
+        finding.trigger = transition.first;
+        room            = record(report, finding) && room;
+      }
+    }
+  }
+  return room;
+}
+
 }  // namespace
 
 // ---------------------------------------------------------------------------
@@ -385,10 +459,19 @@ Status analyse(const Model& model, StateId initial, Report& report) noexcept {
 
   for (const auto& entry : model.states()) {
     for (const auto& transition : entry.second.transitions) {
-      room = check_alternatives(model, entry.first, transition.first, transition.second, report) &&
+      room = check_alternatives(model, entry.first, kNoGroup, transition.first, transition.second,
+                                report) &&
              room;
     }
   }
+  for (const auto& entry : model.groups()) {
+    for (const auto& transition : entry.second.transitions) {
+      room = check_alternatives(model, kNoState, entry.first, transition.first, transition.second,
+                                report) &&
+             room;
+    }
+  }
+  room = check_group_overrides(model, report) && room;
 
   return room ? Status::Ok : Status::CapacityExceeded;
 }
@@ -408,6 +491,7 @@ Severity severity_of(Check check) noexcept {
     case Check::UnreachableAlternative:
     case Check::ImpossibleGuard:
     case Check::ShadowedAlternative:
+    case Check::OverriddenGroupTransition:
       return Severity::Error;
   }
   return Severity::Error;
@@ -421,6 +505,7 @@ const char* to_string(Check check) noexcept {
     case Check::UnreachableAlternative: return "unreachable-alternative";
     case Check::ImpossibleGuard:        return "impossible-guard";
     case Check::ShadowedAlternative:    return "shadowed-alternative";
+    case Check::OverriddenGroupTransition: return "overridden-group-transition";
   }
   return "unknown-check";
 }
@@ -460,14 +545,25 @@ void describe(const Model& model, const Finding& finding, Message& out) noexcept
       append_clipped(out, cstr("' is declared but no state lists it"));
       return;
 
+    case Check::OverriddenGroupTransition:
+      append_clipped(out, cstr("group '"));
+      append_clipped(out, cstr(model.group_name(finding.group)));
+      append_clipped(out, cstr("', trigger '"));
+      append_clipped(out, cstr(model.trigger_name(finding.trigger)));
+      append_clipped(out, cstr("': every member answers it without a guard, so the group's "
+                               "transition is never taken"));
+      return;
+
     default:
       break;
   }
 
-  // The three that are about one alternative share a prefix: which state,
-  // which trigger, which of its alternatives.
-  append_clipped(out, cstr("state '"));
-  append_clipped(out, cstr(model.state_name(finding.state)));
+  // The three that are about one alternative share a prefix: which state or
+  // group, which trigger, which of its alternatives.
+  const bool in_group = (finding.group != kNoGroup);
+  append_clipped(out, cstr(in_group ? "group '" : "state '"));
+  append_clipped(out, cstr(in_group ? model.group_name(finding.group)
+                                    : model.state_name(finding.state)));
   append_clipped(out, cstr("', trigger '"));
   append_clipped(out, cstr(model.trigger_name(finding.trigger)));
   append_clipped(out, cstr("', alternative "));
@@ -484,11 +580,15 @@ void describe(const Model& model, const Finding& finding, Message& out) noexcept
       append_clipped(out, cstr(": the guard can never hold ("));
       {
         const Model::ConditionPool& pool  = model.conditions();
+        const GroupNode*            group = model.group(finding.group);
         const StateNode*            node  = model.state(finding.state);
+        const TransitionMap*        table = (group != nullptr) ? &group->transitions
+                                          : (node != nullptr)  ? &node->transitions
+                                                               : nullptr;
         const Alternatives*         list  = nullptr;
-        if (node != nullptr) {
-          const auto it = node->transitions.find(finding.trigger);
-          list = (it == node->transitions.end()) ? nullptr : &it->second;
+        if (table != nullptr) {
+          const auto it = table->find(finding.trigger);
+          list = (it == table->end()) ? nullptr : &it->second;
         }
         if (list != nullptr && finding.alternative > 0 && finding.alternative <= list->size()) {
           const Alternative& alternative = (*list)[finding.alternative - 1U];

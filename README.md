@@ -14,8 +14,9 @@ A finite state machine described entirely by a YAML file, built on the
 > Anything else is an error, reported back to whoever is listening.**
 
 Triggers carry `key=value` arguments; guards are declarative comparisons
-against them. No actions, no timers, no nesting, no application code in the
-decision.
+against them. A group of states can share transitions, written once. No actions,
+no timers, no nesting — the machine is always in exactly one state — and no
+application code in the decision.
 
 | Constraint | How it is met |
 |---|---|
@@ -98,7 +99,7 @@ gates the build.
 
 ```
 $ ./build/car_console --version
-fms-yaml 1.0.0 (capacities 32_32_8_4_3_64_4_31_95_127_32)
+fms-yaml 1.0.0 (capacities 32_32_8_4_3_64_4_31_95_127_32_4)
 ```
 
 The version comes from `fms/version.hpp`, which CMake generates from
@@ -168,16 +169,18 @@ exits. Exit status is 1 if the linter found an error.
 ```sh
 $ ./build/car_console examples/car/car.setup.yaml examples/car/car.machine.yaml --check
 setup   : instance 'car-ecu-01', starts in 'power_off'
-machine : 'car', 7 states, 10 triggers, 7 guard conditions
+machine : 'car', 7 states, 10 triggers, 6 guard conditions, 1 group(s)
   power_off     * 1 trigger(s) ignition_on
   self_test       3 trigger(s) ignition_off self_test_passed(2) self_test_failed
-  standing        4 trigger(s) ignition_off throttle_pressed(2) engine_fault(2) brake_pressed
+  standing        3 trigger(s) ignition_off throttle_pressed(2) brake_pressed
   ...
+  running         group: standing accelerating coasting braking; 1 trigger(s) engine_fault(2)
 lint    : clean
 ok
 ```
 
-A number in brackets is how many guarded alternatives that trigger has. A bad
+A number in brackets is how many guarded alternatives that trigger has. A state's
+line counts its own transitions; the ones it shares are on its group's line. A bad
 file fails here rather than at the first trigger:
 
 ```
@@ -209,6 +212,7 @@ lint    : 6 finding(s)
 | `unreachable-alternative` | error | it comes after an unguarded one, which always holds |
 | `impossible-guard` | error | the ANDed conditions contradict each other |
 | `shadowed-alternative` | error | an earlier alternative holds every time this one would |
+| `overridden-group-transition` | error | every member state answers the trigger itself without a guard, so the group is never asked |
 | `dead-end-state` | warning | nothing leads out of it — often a terminal state |
 | `unused-trigger` | warning | declared, but no state lists it: input on its channel is always refused |
 
@@ -225,6 +229,12 @@ labelled with its trigger and guard. An unguarded alternative among several is
 labelled `[otherwise]`, because file order is what makes it the fallback and
 order is the one thing a diagram cannot show.
 
+A group is drawn as a box around its members: a Mermaid composite state, a
+Graphviz cluster. Its transitions leave the box once instead of once per member.
+`~self` in a group is a loop on the box in Mermaid, and a line in the cluster's
+label in Graphviz, which cannot draw an edge from a cluster to itself. A group
+with no members is not drawn.
+
 ```sh
 ./build/car_console car.setup.yaml car.machine.yaml --export mermaid
 ./build/car_console car.setup.yaml car.machine.yaml --export dot | dot -Tsvg > car.svg
@@ -238,6 +248,12 @@ change that was not redrawn is a red build rather than a picture that lies.
 ```mermaid
 stateDiagram-v2
     [*] --> power_off
+    state running {
+        standing
+        accelerating
+        coasting
+        braking
+    }
     power_off --> self_test: ignition_on
     self_test --> power_off: ignition_off
     self_test --> standing: self_test_passed [errors == 0]
@@ -246,12 +262,8 @@ stateDiagram-v2
     standing --> power_off: ignition_off
     standing --> accelerating: throttle_pressed [pedal #gt; 5]
     standing --> standing: throttle_pressed [otherwise]
-    standing --> fault: engine_fault [severity #gt;= 2]
-    standing --> standing: engine_fault [otherwise]
     standing --> standing: brake_pressed
     accelerating --> coasting: throttle_released
-    accelerating --> fault: engine_fault [severity #gt;= 2]
-    accelerating --> accelerating: engine_fault [otherwise]
     accelerating --> braking: brake_pressed
     coasting --> accelerating: throttle_pressed [pedal #gt; 5]
     coasting --> coasting: throttle_pressed [otherwise]
@@ -263,6 +275,8 @@ stateDiagram-v2
     braking --> coasting: brake_released
     braking --> standing: vehicle_stopped [speed == 0]
     fault --> power_off: ignition_off
+    running --> fault: engine_fault [severity #gt;= 2]
+    running --> running: engine_fault [otherwise]
 ```
 
 <sub>Generated from the machine file by `tools/diagram_sync.py`, and checked by the
@@ -305,6 +319,14 @@ states:
       throttle_pressed:         # resting a foot on the pedal is not pulling away
         - {when: "pedal > 5", target: accelerating}
         - {target: standing}
+
+groups:                         # transitions several states share
+  - name: running
+    states: [standing, accelerating, coasting, braking]
+    transitions:
+      engine_fault:
+        - {when: "severity >= 2", target: fault}
+        - {target: ~self}       # stay in whichever member it arrived in
 ```
 
 `car.setup.yaml`:
@@ -330,6 +352,13 @@ A **guard** is one comparison against one argument — `==` `!=` `<` `<=` `>`
 several alternatives are ORed. Guards are parsed at load time, so `when:
 "pedal"` is a config error with a line number, and a missing argument makes the
 guard false — a guard decides, it never fails.
+
+A **group** names states that share transitions. A trigger is looked up in the
+current state first and in its group second, so a state that lists the trigger
+itself overrides the group, and the group answers when the state's own guards
+all fail. A state belongs to at most one group. A group is not a state: it is
+never a target and never the initial state. `~self` as a target means the state
+the trigger arrived in.
 
 Each loader rejects the other's sections, naming the file the section belongs
 in.
@@ -373,7 +402,7 @@ fms::TransitionEvent event;
 switch (machine.fire(model.find_trigger("throttle_pressed"), args, event)) {
   case fms::Status::Ok:            /* event.from -> event.to */    break;
   case fms::Status::GuardRejected: /* listed, but no guard held */ break;
-  case fms::Status::NoTransition:  /* not listed in this state */  break;
+  case fms::Status::NoTransition:  /* not listed in this state or its group */ break;
   default: break;
 }
 ```
@@ -413,8 +442,14 @@ Model                                              the behaviour
 ├── states_        flat_map<StateId, StateNode>    a state and its dependencies
 │   └── StateNode
 │       ├── name         Name
+│       ├── group        GroupId                   kNoGroup, or its one group
 │       └── transitions  flat_map<TriggerId, Alternatives>
 │                          Alternative{first_condition, count, target}
+├── groups_        flat_map<GroupId, GroupNode>    transitions shared by states
+│   └── GroupNode
+│       ├── name         Name
+│       └── transitions  flat_map<TriggerId, Alternatives>
+├── group_index_   flat_map<Name, GroupId>         name resolution, load time only
 ├── conditions_    vector<Condition>               machine-wide guard pool
 ├── state_index_   flat_map<Name, StateId>         name resolution, load time only
 ├── triggers_      flat_map<TriggerId, TriggerDef> a trigger and its channel
@@ -423,7 +458,9 @@ Model                                              the behaviour
 ```
 
 Firing a trigger is one binary search in the current state's transition map,
-then the alternatives in file order until a guard holds. Conditions are interned
+then the alternatives in file order until a guard holds. When the state does not
+list the trigger, or none of its guards holds, the same is done once more in its
+group's map. A group's transitions are stored once, not copied into each member. Conditions are interned
 in one pool and referenced by index, so an `Alternative` is 6 bytes rather than
 two fixed-size strings; without that a full `Model` would be hundreds of
 kilobytes.
@@ -496,7 +533,7 @@ include/fms/
   limits.hpp          compile-time capacities (override with -DFMS_MAX_STATES=…)
   abi.hpp             makes a capacity mismatch a link error, not a corrupt Model
   version.hpp         generated by CMake from project(); not in the source tree
-  model.hpp           the machine: triggers, states and guarded alternatives
+  model.hpp           the machine: triggers, states, groups and guarded alternatives
   args.hpp            key=value arguments, as views over the port's buffer
   condition.hpp       one guard: arg, operator, literal
   setup.hpp           the deployment: name, initial state, io

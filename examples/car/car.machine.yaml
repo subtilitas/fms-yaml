@@ -6,6 +6,10 @@
 #   standing  --throttle_pressed, pedal > 5--> accelerating
 #   coasting  --brake_pressed--> braking --vehicle_stopped--> standing
 #
+# The four states the car moves in form the group 'running', which states once
+# what an engine fault does in any of them.  A state that lists the trigger
+# itself is asked first: coasting and braking treat every fault as serious.
+#
 # Guards are declarative comparisons against the arguments a trigger carries, so
 # there is still no application code in the decision.  Alternatives are tried in
 # the order written and the first whose guard holds wins; an entry without a
@@ -59,18 +63,12 @@ states:
         - {when: "pedal > 5", target: accelerating}
         - {target: standing}
       brake_pressed: standing        # holding the brake while parked changes nothing
-      engine_fault:
-        - {when: "severity >= 2", target: fault}
-        - {target: standing}         # a warning is noted, the car stays usable
       ignition_off: power_off
 
   - name: accelerating
     transitions:
       throttle_released: coasting
       brake_pressed:     braking
-      engine_fault:
-        - {when: "severity >= 2", target: fault}
-        - {target: accelerating}
 
   - name: coasting
     transitions:
@@ -82,7 +80,7 @@ states:
       vehicle_stopped:
         - {when: "speed == 0", target: standing}
         - {target: coasting}
-      engine_fault: fault
+      engine_fault: fault            # overrides the group: any fault at speed
 
   - name: braking
     transitions:
@@ -91,8 +89,16 @@ states:
       # channel, rather than being quietly treated as "carry on braking".
       vehicle_stopped: {when: "speed == 0", target: standing}
       brake_released:  coasting
-      engine_fault:    fault
+      engine_fault:    fault         # overrides the group, as in coasting
 
   - name: fault
     transitions:
       ignition_off: power_off
+
+groups:
+  - name: running
+    states: [standing, accelerating, coasting, braking]
+    transitions:
+      engine_fault:
+        - {when: "severity >= 2", target: fault}
+        - {target: ~self}            # a warning is noted, the car stays where it is

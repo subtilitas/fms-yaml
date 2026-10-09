@@ -68,19 +68,22 @@ void emit_escaped(const Out& out, StringView text, Format format) noexcept {
 /// `trigger`, then the guard it carries.  A fallback among several
 /// alternatives is named as one: the file's order is what makes it the
 /// fallback, and order is the one thing a diagram cannot show.
+/// `separator` goes between the trigger and its guard: a space, or a line
+/// break in a Dot edge label.
 void emit_label(const Out& out, const Model& model, TriggerId trigger,
-                const Alternative& alternative, bool has_siblings, Format format) noexcept {
+                const Alternative& alternative, bool has_siblings, Format format,
+                const char* separator) noexcept {
   emit_escaped(out, cstr(model.trigger_name(trigger)), format);
 
   if (alternative.condition_count == 0) {
     if (has_siblings) {
-      out((format == Format::Mermaid) ? " " : "\\n");
+      out(separator);
       out("[otherwise]");
     }
     return;
   }
 
-  out((format == Format::Mermaid) ? " " : "\\n");
+  out(separator);
   out("[");
 
   const Model::ConditionPool& pool = model.conditions();
@@ -101,6 +104,22 @@ void emit_label(const Out& out, const Model& model, TriggerId trigger,
   out("]");
 }
 
+/// True when at least one state belongs to `group`.  A group without members
+/// has nothing to draw a box around, so it is left out of the picture.
+bool has_members(const Model& model, GroupId group) noexcept {
+  for (const auto& entry : model.states()) {
+    if (entry.second.group == group) {
+      return true;
+    }
+  }
+  return false;
+}
+
+/// Where an edge from `from` ends: kSelfState is `from` itself.
+StateId resolve(StateId from, const Alternative& alternative) noexcept {
+  return (alternative.target == kSelfState) ? from : alternative.target;
+}
+
 void render_mermaid(const Out& out, const Model& model, StateId initial) noexcept {
   out("stateDiagram-v2\n");
 
@@ -110,6 +129,26 @@ void render_mermaid(const Out& out, const Model& model, StateId initial) noexcep
     out("\n");
   }
 
+  // Each group is a composite state holding its members.  Only the membership
+  // goes inside the block; every edge is written at the top level, which is
+  // where Mermaid draws an edge between a member and a state outside it.
+  for (const auto& group : model.groups()) {
+    if (!has_members(model, group.first)) {
+      continue;
+    }
+    out("    state ");
+    emit_escaped(out, view(group.second.name), Format::Mermaid);
+    out(" {\n");
+    for (const auto& entry : model.states()) {
+      if (entry.second.group == group.first) {
+        out("        ");
+        emit_escaped(out, view(entry.second.name), Format::Mermaid);
+        out("\n");
+      }
+    }
+    out("    }\n");
+  }
+
   for (const auto& entry : model.states()) {
     for (const auto& transition : entry.second.transitions) {
       const bool has_siblings = transition.second.size() > 1;
@@ -117,9 +156,35 @@ void render_mermaid(const Out& out, const Model& model, StateId initial) noexcep
         out("    ");
         emit_escaped(out, cstr(model.state_name(entry.first)), Format::Mermaid);
         out(" --> ");
-        emit_escaped(out, cstr(model.state_name(alternative.target)), Format::Mermaid);
+        emit_escaped(out, cstr(model.state_name(resolve(entry.first, alternative))),
+                     Format::Mermaid);
         out(": ");
-        emit_label(out, model, transition.first, alternative, has_siblings, Format::Mermaid);
+        emit_label(out, model, transition.first, alternative, has_siblings, Format::Mermaid, " ");
+        out("\n");
+      }
+    }
+  }
+
+  // A group's transition leaves the box once, for every member.  `~self` is a
+  // loop on the box: a group is never entered, so the loop can only mean that
+  // each member stays where it is.
+  for (const auto& group : model.groups()) {
+    if (!has_members(model, group.first)) {
+      continue;
+    }
+    for (const auto& transition : group.second.transitions) {
+      const bool has_siblings = transition.second.size() > 1;
+      for (const Alternative& alternative : transition.second) {
+        out("    ");
+        emit_escaped(out, view(group.second.name), Format::Mermaid);
+        out(" --> ");
+        emit_escaped(out,
+                     (alternative.target == kSelfState)
+                         ? view(group.second.name)
+                         : cstr(model.state_name(alternative.target)),
+                     Format::Mermaid);
+        out(": ");
+        emit_label(out, model, transition.first, alternative, has_siblings, Format::Mermaid, " ");
         out("\n");
       }
     }
@@ -131,6 +196,14 @@ void render_dot(const Out& out, const Model& model, StateId initial) noexcept {
   emit_escaped(out, model.name().empty() ? cstr("machine") : view(model.name()), Format::Dot);
   out("\" {\n");
   out("  rankdir=LR;\n");
+
+  bool clustered = false;
+  for (const auto& group : model.groups()) {
+    clustered = clustered || has_members(model, group.first);
+  }
+  if (clustered) {
+    out("  compound=true;\n");  // lets an edge start at a cluster's border
+  }
   out("  node [shape=box, style=rounded, fontname=\"sans-serif\"];\n");
   out("  edge [fontname=\"sans-serif\", fontsize=10];\n");
 
@@ -141,6 +214,38 @@ void render_dot(const Out& out, const Model& model, StateId initial) noexcept {
     out("\";\n");
   }
 
+  // A group is a cluster.  Graphviz cannot draw an edge from a cluster to
+  // itself, so a `~self` transition goes into the cluster's label instead, one
+  // line each, the way UML writes a transition that does not leave the state.
+  for (const auto& group : model.groups()) {
+    if (!has_members(model, group.first)) {
+      continue;
+    }
+    out("  subgraph \"cluster_");
+    emit_escaped(out, view(group.second.name), Format::Dot);
+    out("\" {\n    label=\"");
+    emit_escaped(out, view(group.second.name), Format::Dot);
+    for (const auto& transition : group.second.transitions) {
+      const bool has_siblings = transition.second.size() > 1;
+      for (const Alternative& alternative : transition.second) {
+        if (alternative.target == kSelfState) {
+          out("\\n");
+          emit_label(out, model, transition.first, alternative, has_siblings, Format::Dot, " ");
+          out(" / stay");
+        }
+      }
+    }
+    out("\";\n    style=rounded;\n");
+    for (const auto& entry : model.states()) {
+      if (entry.second.group == group.first) {
+        out("    \"");
+        emit_escaped(out, view(entry.second.name), Format::Dot);
+        out("\";\n");
+      }
+    }
+    out("  }\n");
+  }
+
   for (const auto& entry : model.states()) {
     for (const auto& transition : entry.second.transitions) {
       const bool has_siblings = transition.second.size() > 1;
@@ -148,9 +253,42 @@ void render_dot(const Out& out, const Model& model, StateId initial) noexcept {
         out("  \"");
         emit_escaped(out, cstr(model.state_name(entry.first)), Format::Dot);
         out("\" -> \"");
-        emit_escaped(out, cstr(model.state_name(alternative.target)), Format::Dot);
+        emit_escaped(out, cstr(model.state_name(resolve(entry.first, alternative))), Format::Dot);
         out("\" [label=\"");
-        emit_label(out, model, transition.first, alternative, has_siblings, Format::Dot);
+        emit_label(out, model, transition.first, alternative, has_siblings, Format::Dot, "\\n");
+        out("\"];\n");
+      }
+    }
+  }
+
+  // An edge leaving a cluster is drawn from one member with `ltail`, which
+  // clips it at the cluster's border.  Which member does not matter; the first
+  // is used.
+  for (const auto& group : model.groups()) {
+    StateId anchor = kNoState;
+    for (const auto& entry : model.states()) {
+      if (entry.second.group == group.first) {
+        anchor = entry.first;
+        break;
+      }
+    }
+    if (anchor == kNoState) {
+      continue;
+    }
+    for (const auto& transition : group.second.transitions) {
+      const bool has_siblings = transition.second.size() > 1;
+      for (const Alternative& alternative : transition.second) {
+        if (alternative.target == kSelfState) {
+          continue;  // in the cluster's label
+        }
+        out("  \"");
+        emit_escaped(out, cstr(model.state_name(anchor)), Format::Dot);
+        out("\" -> \"");
+        emit_escaped(out, cstr(model.state_name(alternative.target)), Format::Dot);
+        out("\" [ltail=\"cluster_");
+        emit_escaped(out, view(group.second.name), Format::Dot);
+        out("\", label=\"");
+        emit_label(out, model, transition.first, alternative, has_siblings, Format::Dot, "\\n");
         out("\"];\n");
       }
     }
