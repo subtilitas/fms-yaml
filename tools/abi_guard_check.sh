@@ -89,7 +89,7 @@ work="$(mktemp -d)"
 trap 'rm -rf "${work}"' EXIT
 
 cat > "${work}/probe.cpp" <<'CPP'
-#include <cstdio>
+#include <iostream>
 
 #include <fms/abi.hpp>
 #include <fms/limits.hpp>
@@ -104,9 +104,9 @@ int main() {
   if (model.state_count() != 0 || setup.name().size() != 0) {
     return 1;
   }
-  std::printf("%zu %s %zu %zu %zu\n", fms::limits::kMaxStates, fms::abi::tag(),
-              fms::abi::etl_layout::vector, fms::abi::etl_layout::flat_map,
-              fms::abi::etl_layout::string);
+  std::cout << fms::limits::kMaxStates << ' ' << fms::abi::tag() << ' '
+            << fms::abi::etl_layout::vector << ' ' << fms::abi::etl_layout::flat_map << ' '
+            << fms::abi::etl_layout::string << '\n';
   return 0;
 }
 CPP

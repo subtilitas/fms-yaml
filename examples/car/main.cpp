@@ -32,8 +32,11 @@
 //
 // There is nothing to register: the machine is entirely described by the YAML,
 // and the only application code is the trace hook below.
-#include <cstdio>
-#include <cstring>
+#include <cstddef>
+#include <iomanip>
+#include <iostream>
+
+#include <etl/char_traits.h>
 
 #include "fms/abi.hpp"
 #include "fms/port/console_port.hpp"
@@ -48,49 +51,59 @@
 
 namespace {
 
+/// The longest command-line argument read as an option.  Every option and
+/// format name is far shorter; a longer argument is clipped to this length,
+/// and a view that long equals none of them.
+constexpr std::size_t kMaxOptionLength = 64;
+
+fms::StringView option(const char* argument) {
+  return fms::StringView(argument, etl::strlen(argument, kMaxOptionLength));
+}
+
 void trace(void* user, const fms::TransitionEvent& event) {
   const auto* model = static_cast<const fms::Model*>(user);
 
   if (event.accepted) {
-    (void)std::fprintf(stderr, "  [%s --%s--> %s]\n", model->state_name(event.from),
-                       model->trigger_name(event.trigger), model->state_name(event.to));
+    std::cerr << "  [" << model->state_name(event.from) << " --"
+              << model->trigger_name(event.trigger) << "--> " << model->state_name(event.to)
+              << "]\n";
   }
 }
 
 /// Reports a failed load with the file it came from, so a two-file setup does
 /// not leave you guessing which one is wrong.
 void report(const char* path, fms::Status status, const fms::config::Diagnostics& diagnostics) {
-  (void)std::fprintf(stderr, "%s: %s", path, fms::to_string(status));
+  std::cerr << path << ": " << fms::to_string(status);
   if (diagnostics.line > 0) {
-    (void)std::fprintf(stderr, " at line %d", diagnostics.line);
+    std::cerr << " at line " << diagnostics.line;
   }
-  (void)std::fprintf(stderr, ": %s\n", diagnostics.message.c_str());
+  std::cerr << ": " << diagnostics.message.c_str() << '\n';
   if (status == fms::Status::FileNotFound) {
-    (void)std::fputs("hint: pass the paths, e.g. examples/car/car.setup.yaml "
-                     "examples/car/car.machine.yaml\n",
-                     stderr);
+    std::cerr << "hint: pass the paths, e.g. examples/car/car.setup.yaml "
+                 "examples/car/car.machine.yaml\n";
   }
 }
 
 /// --check: say what the two files describe, then stop.
 void describe(const fms::Setup& setup, const fms::Model& model, const fms::StateMachine& machine) {
-  std::printf("setup   : instance '%s', starts in '%s'\n", setup.name().c_str(),
-              setup.initial_name().c_str());
-  std::printf("machine : '%s', %zu states, %zu triggers, %zu guard conditions\n",
-              model.name().c_str(), model.state_count(), model.trigger_count(),
-              model.condition_count());
+  std::cout << "setup   : instance '" << setup.name().c_str() << "', starts in '"
+            << setup.initial_name().c_str() << "'\n";
+  std::cout << "machine : '" << model.name().c_str() << "', " << model.state_count()
+            << " states, " << model.trigger_count() << " triggers, " << model.condition_count()
+            << " guard conditions\n";
 
   for (const auto& entry : model.states()) {
     const fms::StateId id = entry.first;
-    std::printf("  %-13s %s%zu trigger(s)", model.state_name(id),
-                (id == machine.initial()) ? "* " : "  ", entry.second.transitions.size());
+    std::cout << "  " << std::left << std::setw(13) << model.state_name(id) << std::right << ' '
+              << ((id == machine.initial()) ? "* " : "  ") << entry.second.transitions.size()
+              << " trigger(s)";
     for (const auto& transition : entry.second.transitions) {
-      std::printf(" %s", model.trigger_name(transition.first));
+      std::cout << ' ' << model.trigger_name(transition.first);
       if (transition.second.size() > 1) {
-        std::printf("(%zu)", transition.second.size());
+        std::cout << '(' << transition.second.size() << ')';
       }
     }
-    std::putchar('\n');
+    std::cout << '\n';
   }
 }
 
@@ -103,28 +116,29 @@ bool report_lint(const fms::Model& model, fms::StateId initial) {
   const fms::Status status = fms::lint::analyse(model, initial, report);
 
   if (report.empty()) {
-    std::puts("lint    : clean");
+    std::cout << "lint    : clean\n";
     return true;
   }
 
-  std::printf("lint    : %zu finding(s)\n", report.size());
+  std::cout << "lint    : " << report.size() << " finding(s)\n";
 
   fms::Message text;
   for (const fms::lint::Finding& finding : report) {
     fms::lint::describe(model, finding, text);
-    std::printf("  %-7s %-23s %s\n",
-                fms::lint::to_string(fms::lint::severity_of(finding.check)),
-                fms::lint::to_string(finding.check), text.c_str());
+    std::cout << "  " << std::left << std::setw(7)
+              << fms::lint::to_string(fms::lint::severity_of(finding.check)) << ' '
+              << std::setw(23) << fms::lint::to_string(finding.check) << std::right << ' '
+              << text.c_str() << '\n';
   }
   if (status == fms::Status::CapacityExceeded) {
-    std::puts("  ... report full; raise FMS_MAX_FINDINGS to see the rest");
+    std::cout << "  ... report full; raise FMS_MAX_FINDINGS to see the rest\n";
   }
   return !fms::lint::has_errors(report);
 }
 
 /// The diagram arrives in fragments, in order; there is nothing to assemble.
 void write_fragment(void* /*user*/, fms::StringView text) {
-  (void)std::fwrite(text.data(), 1, text.size(), stdout);
+  std::cout.write(text.data(), static_cast<std::streamsize>(text.size()));
 }
 
 #endif  // defined(FMS_WITH_INSPECT)
@@ -138,6 +152,10 @@ fms::Runtime      g_runtime;
 }  // namespace
 
 int main(int argc, char** argv) {
+  // A trace line goes to stderr the moment it is written, as stdio's stderr
+  // does, rather than first flushing what std::cout still holds.
+  std::cerr.tie(nullptr);
+
   const char* setup_path   = "car.setup.yaml";
   const char* machine_path = "car.machine.yaml";
   bool        quiet        = false;
@@ -151,33 +169,34 @@ int main(int argc, char** argv) {
 #endif
 
   for (int i = 1; i < argc; ++i) {
-    if (std::strcmp(argv[i], "--version") == 0) {
+    const fms::StringView argument = option(argv[i]);
+    if (argument == fms::StringView("--version")) {
       // The capacities go with the version because they are half of what
       // decides whether two builds are the same build.
-      (void)std::printf("fms-yaml %s (capacities %s)\n", fms::version(), fms::abi::tag());
+      std::cout << "fms-yaml " << fms::version() << " (capacities " << fms::abi::tag() << ")\n";
       return 0;
     }
-    if (std::strcmp(argv[i], "--quiet") == 0) {
+    if (argument == fms::StringView("--quiet")) {
       quiet = true;
-    } else if (std::strcmp(argv[i], "--check") == 0) {
+    } else if (argument == fms::StringView("--check")) {
       check_only = true;
-    } else if (std::strcmp(argv[i], "--lint") == 0) {
+    } else if (argument == fms::StringView("--lint")) {
 #if defined(FMS_WITH_INSPECT)
       lint_only = true;
 #else
-      (void)std::fputs("built without fms_inspect: --lint is unavailable\n", stderr);
+      std::cerr << "built without fms_inspect: --lint is unavailable\n";
       return 2;
 #endif
-    } else if (std::strcmp(argv[i], "--export") == 0) {
+    } else if (argument == fms::StringView("--export")) {
 #if defined(FMS_WITH_INSPECT)
       const char* name = (i + 1 < argc) ? argv[++i] : "";
-      if (!fms::diagram::parse_format(fms::StringView(name, std::strlen(name)), format)) {
-        (void)std::fputs("usage: --export mermaid|dot\n", stderr);
+      if (!fms::diagram::parse_format(option(name), format)) {
+        std::cerr << "usage: --export mermaid|dot\n";
         return 2;
       }
       export_diagram = true;
 #else
-      (void)std::fputs("built without fms_inspect: --export is unavailable\n", stderr);
+      std::cerr << "built without fms_inspect: --export is unavailable\n";
       return 2;
 #endif
     } else if (positional == 0) {
@@ -210,8 +229,8 @@ int main(int argc, char** argv) {
   // setup must exist in the machine.
   const fms::Status bound = g_machine.init(g_model, g_setup);
   if (!fms::is_ok(bound)) {
-    (void)std::fprintf(stderr, "%s does not fit %s: %s ('%s')\n", setup_path, machine_path,
-                       fms::to_string(bound), g_setup.initial_name().c_str());
+    std::cerr << setup_path << " does not fit " << machine_path << ": " << fms::to_string(bound)
+              << " ('" << g_setup.initial_name().c_str() << "')\n";
     return 1;
   }
 
@@ -237,7 +256,7 @@ int main(int argc, char** argv) {
     }
 #endif
     if (check_only) {
-      std::puts("ok");
+      std::cout << "ok\n";
     }
     return 0;
   }
@@ -245,20 +264,20 @@ int main(int argc, char** argv) {
   fms::port::ConsolePort port(/*prompt=*/!quiet);
 
   if (!fms::is_ok(g_runtime.init(g_machine, port))) {
-    (void)std::fputs("runtime init failed\n", stderr);
+    std::cerr << "runtime init failed\n";
     return 1;
   }
 
   if (!quiet) {
     g_runtime.set_trace(&trace, &g_model);
-    std::printf("%s running '%s': %zu states, %zu triggers - type 'help' or 'quit'\n",
-                g_setup.name().c_str(), g_model.name().c_str(), g_model.state_count(),
-                g_model.trigger_count());
+    std::cout << g_setup.name().c_str() << " running '" << g_model.name().c_str()
+              << "': " << g_model.state_count() << " states, " << g_model.trigger_count()
+              << " triggers - type 'help' or 'quit'\n";
   }
 
   const fms::Status started = g_runtime.start();
   if (!fms::is_ok(started)) {
-    (void)std::fprintf(stderr, "start failed: %s\n", fms::to_string(started));
+    std::cerr << "start failed: " << fms::to_string(started) << '\n';
     return 1;
   }
 
@@ -269,18 +288,17 @@ int main(int argc, char** argv) {
       break;
     }
     if (!fms::is_ok(status)) {
-      (void)std::fprintf(stderr, "port error: %s (%s)\n", fms::to_string(status),
-                         port.last_error());
+      std::cerr << "port error: " << fms::to_string(status) << " (" << port.last_error()
+                << ")\n";
       break;
     }
   }
 
   // Shutting down on the way out; there is nothing left to report a failure to.
   (void)g_runtime.stop();
-  (void)std::fprintf(stderr,
-                     "final state '%s': %u transitions, %u rejected, %u inputs (%u unknown)\n",
-                     g_machine.current_name(), g_machine.transition_count(),
-                     g_machine.rejection_count(), g_runtime.inputs_received(),
-                     g_runtime.inputs_unrouted());
+  std::cerr << "final state '" << g_machine.current_name() << "': "
+            << g_machine.transition_count() << " transitions, " << g_machine.rejection_count()
+            << " rejected, " << g_runtime.inputs_received() << " inputs ("
+            << g_runtime.inputs_unrouted() << " unknown)\n";
   return 0;
 }

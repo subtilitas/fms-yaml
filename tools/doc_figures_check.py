@@ -56,7 +56,7 @@ TUNED = ["-DFMS_MAX_STATES=8", "-DFMS_MAX_TRIGGERS=12"]
 
 PROBE = """
 #include <cstddef>
-#include <cstdio>
+#include <iostream>
 
 #include <etl/vector.h>
 
@@ -66,14 +66,14 @@ PROBE = """
 #include <fms/setup.hpp>
 
 int main() {
-  std::printf("fms::Model %zu\\n", sizeof(fms::Model));
-  std::printf("fms::StateNode %zu\\n", sizeof(fms::StateNode));
-  std::printf("fms::Condition %zu\\n", sizeof(fms::Condition));
-  std::printf("fms::Alternative %zu\\n", sizeof(fms::Alternative));
-  std::printf("fms::Setup %zu\\n", sizeof(fms::Setup));
-  std::printf("fms::Args %zu\\n", sizeof(fms::Args));
-  std::printf("fms::Runtime %zu\\n", sizeof(fms::Runtime));
-  std::printf("etl::vector<int,8> %zu\\n", sizeof(etl::vector<int, 8>));
+  std::cout << "fms::Model " << sizeof(fms::Model) << '\\n';
+  std::cout << "fms::StateNode " << sizeof(fms::StateNode) << '\\n';
+  std::cout << "fms::Condition " << sizeof(fms::Condition) << '\\n';
+  std::cout << "fms::Alternative " << sizeof(fms::Alternative) << '\\n';
+  std::cout << "fms::Setup " << sizeof(fms::Setup) << '\\n';
+  std::cout << "fms::Args " << sizeof(fms::Args) << '\\n';
+  std::cout << "fms::Runtime " << sizeof(fms::Runtime) << '\\n';
+  std::cout << "etl::vector<int,8> " << sizeof(etl::vector<int, 8>) << '\\n';
   return 0;
 }
 """
