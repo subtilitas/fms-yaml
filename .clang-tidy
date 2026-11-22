@@ -28,7 +28,6 @@ Checks: >
   -cppcoreguidelines-pro-bounds-array-to-pointer-decay,
   -cppcoreguidelines-pro-bounds-constant-array-index,
   -cppcoreguidelines-pro-bounds-pointer-arithmetic,
-  -cppcoreguidelines-pro-type-vararg,
   -misc-include-cleaner,
   -misc-non-private-member-variables-in-classes,
   -modernize-use-trailing-return-type,
@@ -56,8 +55,6 @@ Checks: >
 #       Every parser here walks a StringView by (data() + offset, length).
 #       Replacing that with gsl::span is not on the table for a target that has
 #       no GSL.
-#   cppcoreguidelines-pro-type-vararg
-#       snprintf/fprintf are the allocation-free way to format a diagnostic.
 #   misc-include-cleaner
 #       Too eager about transitive ETL headers to be actionable.
 #   modernize-use-trailing-return-type

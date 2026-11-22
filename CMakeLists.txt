@@ -111,10 +111,9 @@ function(fms_warnings target)
     #   -Wswitch-default would
     # have every switch over an enumeration grow a default arm, which is what
     # stops -Wswitch reporting an enumerator nobody handled - the hole
-    # tests/test_status.cpp exists to keep shut.  -Wuseless-cast fires on the
-    # static_cast<int> that pins etl::exception::line_number() to the %d it is
-    # printed with, and that cast is what keeps the pair correct when ETL
-    # changes the return type.
+    # tests/test_status.cpp exists to keep shut.  -Wuseless-cast exists in GCC
+    # only, and this list is shared with Clang, which rejects an unknown warning
+    # option under -Werror.
     target_compile_options(${target} PRIVATE
       -Wall -Wextra -Wpedantic -Wshadow
       -Wconversion -Wsign-conversion

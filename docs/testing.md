@@ -98,9 +98,9 @@ analyser reports and a default set does not, chiefly implicit narrowing and sign
 change. All are silent today, and `-Werror` in CI keeps them that way.
 
 Three are deliberately absent, and `CMakeLists.txt` says why at the point they
-would go: `-Wswitch-default` would defeat `-Wswitch`, `-Wuseless-cast` fires on
-a cast that pins a value to its `printf` specifier, and `-Wnull-dereference`
-reports inside ETL and libstdc++ headers where there is nothing to fix.
+would go: `-Wswitch-default` would defeat `-Wswitch`, `-Wuseless-cast` is
+GCC-only and the list is shared with Clang, and `-Wnull-dereference` reports
+inside ETL and libstdc++ headers where there is nothing to fix.
 
 MSVC builds with `/W4 /WX`. It is the only gate that has caught
 `C4127 conditional expression is constant` where two compile-time constants are

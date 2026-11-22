@@ -1,12 +1,17 @@
 // SPDX-License-Identifier: MIT
 #include "fms/runtime.hpp"
 
-#include <cstring>
+#include <etl/char_traits.h>
 
 namespace fms {
 namespace {
 
-StringView cstr(const char* text) noexcept { return StringView(text, std::strlen(text)); }
+// Every C string this file reads is a literal, a Status text or a name the
+// Model holds, and each of them fits a Message.  The scan stops there at the
+// latest; append_clipped would drop anything longer anyway.
+StringView cstr(const char* text) noexcept {
+  return StringView(text, etl::strlen(text, limits::kMaxMessageLength));
+}
 
 }  // namespace
 

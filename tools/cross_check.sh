@@ -6,7 +6,7 @@
 #   tools/cross_check.sh [build-dir]     # default: build-arm
 #
 # docs/architecture.md's porting section says fms_core needs only <cstdint>,
-# <cstddef>, <cstring> and ETL, and that a firmware build links it and stops
+# <cstddef>, <cstdlib> and ETL, and that a firmware build links it and stops
 # there.  Nothing tested that: every other job builds for the host, where a
 # stray <iostream> or a call into the hosted runtime compiles fine.
 #

@@ -1,20 +1,38 @@
 // SPDX-License-Identifier: MIT
 #include "fms/status.hpp"
 
-#include <cstdio>
 #include <cstdlib>
 
 #include <etl/error_handler.h>
+
+// A program with an operating system has a stderr to report on, and std::cerr
+// writes there without allocating; tests/test_no_alloc.cpp counts the
+// allocations of such a write.  A bare-metal image has no stderr until the
+// application provides one, and std::cerr would link all of <iostream> into
+// it.  A Cortex-M4 probe image that installs the ETL handler has 295 KB of
+// text with std::cerr, 39 KB with fprintf and 16 KB with neither (newlib), and
+// with std::cerr it does not link against newlib-nano at all.  There the
+// report is left out and the abort stays.
+#if defined(__unix__) || defined(__APPLE__) || defined(_WIN32)
+#define FMS_REPORT_ON_STDERR 1
+#include <iostream>
+#else
+#define FMS_REPORT_ON_STDERR 0
+#endif
 
 namespace fms {
 namespace {
 
 void etl_error_callback(const etl::exception& error) {
-  (void)std::fprintf(stderr, "[fms] ETL error: %s at %s:%d\n", error.what(), error.file_name(),
-                     static_cast<int>(error.line_number()));
+#if FMS_REPORT_ON_STDERR
+  std::cerr << "[fms] ETL error: " << error.what() << " at " << error.file_name() << ':'
+            << error.line_number() << '\n';
+#else
+  (void)error;
+#endif
   // ETL only reports programming errors here (a fixed container overrun, an
-  // out-of-range access).  There is no sensible way to continue and we cannot
-  // throw, so stop now and loudly.
+  // out-of-range access).  There is no sensible way to continue and nothing
+  // may throw, so stop now and loudly.
   std::abort();
 }
 
