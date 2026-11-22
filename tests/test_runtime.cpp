@@ -5,7 +5,6 @@
 // involved.
 #include <doctest/doctest.h>
 
-#include <cstring>
 #include <string>
 
 #include "fms/port/memory_port.hpp"
@@ -14,7 +13,7 @@
 
 namespace {
 
-fms::StringView sv(const char* text) { return fms::StringView(text, std::strlen(text)); }
+fms::StringView sv(const char* text) { return fms::StringView(text); }
 
 int g_traced   = 0;
 int g_rejected = 0;
@@ -126,15 +125,15 @@ TEST_CASE("input on a trigger channel changes the state and publishes it") {
   Harness h;
 
   h.deliver("throttle_pressed");
-  CHECK(std::strcmp(h.machine.current_name(), "accelerating") == 0);
+  CHECK(sv(h.machine.current_name()) == sv("accelerating"));
   CHECK(h.port.last_state() == sv("accelerating"));
 
   h.deliver("car/brake");
-  CHECK(std::strcmp(h.machine.current_name(), "braking") == 0);
+  CHECK(sv(h.machine.current_name()) == sv("braking"));
   CHECK(h.port.last_state() == sv("braking"));
 
   h.deliver("vehicle_stopped");
-  CHECK(std::strcmp(h.machine.current_name(), "standing") == 0);
+  CHECK(sv(h.machine.current_name()) == sv("standing"));
   CHECK(h.machine.transition_count() == 3);
   CHECK(h.port.errors().empty());
 }
@@ -145,7 +144,7 @@ TEST_CASE("a trigger the current state does not accept is reported as an error")
 
   h.deliver("car/brake");  // the car is standing
 
-  CHECK(std::strcmp(h.machine.current_name(), "standing") == 0);
+  CHECK(sv(h.machine.current_name()) == sv("standing"));
   CHECK(h.machine.rejection_count() == 1);
   CHECK(h.port.last_error_message() == sv("rejected: brake_pressed in state standing"));
   CHECK(h.port.states().empty());  // the state did not change, so nothing was published
@@ -159,7 +158,7 @@ TEST_CASE("input on an unknown channel is counted and reported") {
   CHECK(h.runtime.inputs_unrouted() == 1);
   CHECK(h.machine.rejection_count() == 0);
   CHECK(h.port.last_error_message() == sv("unknown channel: radio_volume"));
-  CHECK(std::strcmp(h.machine.current_name(), "standing") == 0);
+  CHECK(sv(h.machine.current_name()) == sv("standing"));
 }
 
 TEST_CASE("an idle port is not an error") {
@@ -186,7 +185,7 @@ TEST_CASE("the trace hook sees accepted and rejected triggers alike") {
 TEST_CASE("application code can raise a trigger by name") {
   Harness h;
   CHECK(h.runtime.fire_by_name(sv("throttle_pressed")) == fms::Status::Ok);
-  CHECK(std::strcmp(h.machine.current_name(), "accelerating") == 0);
+  CHECK(sv(h.machine.current_name()) == sv("accelerating"));
 
   CHECK(h.runtime.fire_by_name(sv("vehicle_stopped")) == fms::Status::NoTransition);
   CHECK(h.runtime.fire_by_name(sv("horn")) == fms::Status::UnknownTrigger);
@@ -257,15 +256,15 @@ TEST_CASE("a port that implements only the three required methods still runs") {
   // are inherited, so this returning Ok is the whole point of the test.
   REQUIRE(runtime.start() == fms::Status::Ok);
   CHECK(port.states() == 1);
-  CHECK(std::strcmp(port.last_state().c_str(), "standing") == 0);
+  CHECK(sv(port.last_state().c_str()) == sv("standing"));
 
   CHECK(runtime.service(0) == fms::Status::Ok);
-  CHECK(std::strcmp(port.last_state().c_str(), "accelerating") == 0);
+  CHECK(sv(port.last_state().c_str()) == sv("accelerating"));
   CHECK(port.errors() == 0);
 
   CHECK(runtime.service(0) == fms::Status::EndOfInput);
   CHECK(runtime.stop() == fms::Status::Ok);          // inherited close()
-  CHECK(std::strcmp(port.last_error(), "none") == 0);  // inherited last_error()
+  CHECK(sv(port.last_error()) == sv("none"));  // inherited last_error()
 }
 
 TEST_CASE("MemoryPort refuses to work before it is opened") {
@@ -429,5 +428,5 @@ TEST_CASE("fire_by_name reports a name the machine does not have") {
   CHECK(runtime.fire_by_name(sv("no_such_trigger")) == fms::Status::UnknownTrigger);
   // Malformed arguments are the caller's error here, not a published rejection.
   CHECK(runtime.fire_by_name(sv("throttle_pressed"), sv("pedal")) == fms::Status::ArgumentError);
-  CHECK(std::strcmp(bound.machine.current_name(), "standing") == 0);
+  CHECK(sv(bound.machine.current_name()) == sv("standing"));
 }

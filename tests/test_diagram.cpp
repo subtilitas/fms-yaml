@@ -5,7 +5,6 @@
 #include <doctest/doctest.h>
 
 #include <algorithm>
-#include <cstring>
 #include <string>
 
 #include "fms/inspect/diagram.hpp"
@@ -13,7 +12,7 @@
 
 namespace {
 
-fms::StringView sv(const char* text) { return fms::StringView(text, std::strlen(text)); }
+fms::StringView sv(const char* text) { return fms::StringView(text); }
 
 /// The sink a caller who does want the whole diagram in memory would write.
 struct Collected {

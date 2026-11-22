@@ -3,13 +3,11 @@
 // Guards: one comparison against one argument, parsed at load time.
 #include <doctest/doctest.h>
 
-#include <cstring>
-
 #include "fms/condition.hpp"
 
 namespace {
 
-fms::StringView sv(const char* text) { return fms::StringView(text, std::strlen(text)); }
+fms::StringView sv(const char* text) { return fms::StringView(text); }
 
 fms::Condition parsed(const char* text) {
   fms::Condition condition;
@@ -28,7 +26,7 @@ fms::Args with(const char* text) {
 
 TEST_CASE("a numeric comparison is parsed into arg, operator and number") {
   const fms::Condition c = parsed("pedal >= 30");
-  CHECK(std::strcmp(c.arg.c_str(), "pedal") == 0);
+  CHECK(sv(c.arg.c_str()) == sv("pedal"));
   CHECK(c.op == fms::CompareOp::GreaterEqual);
   CHECK(c.numeric);
   CHECK(c.number == 30);
@@ -37,7 +35,7 @@ TEST_CASE("a numeric comparison is parsed into arg, operator and number") {
 TEST_CASE("whitespace around the operator is optional") {
   CHECK(parsed("pedal>30").number == 30);
   CHECK(parsed("  pedal  >  30  ").number == 30);
-  CHECK(std::strcmp(parsed("pedal>30").arg.c_str(), "pedal") == 0);
+  CHECK(sv(parsed("pedal>30").arg.c_str()) == sv("pedal"));
 }
 
 TEST_CASE("every operator is recognised, longest match first") {
@@ -53,7 +51,7 @@ TEST_CASE("every operator is recognised, longest match first") {
 TEST_CASE("a non-numeric literal becomes a text comparison") {
   const fms::Condition c = parsed("mode == sport");
   CHECK_FALSE(c.numeric);
-  CHECK(std::strcmp(c.literal.c_str(), "sport") == 0);
+  CHECK(sv(c.literal.c_str()) == sv("sport"));
 }
 
 TEST_CASE("numeric comparisons evaluate as arithmetic") {
@@ -99,6 +97,6 @@ TEST_CASE("unreadable guards are refused at parse time") {
 }
 
 TEST_CASE("operators print for diagnostics") {
-  CHECK(std::strcmp(fms::to_string(fms::CompareOp::GreaterEqual), ">=") == 0);
-  CHECK(std::strcmp(fms::to_string(fms::CompareOp::NotEqual), "!=") == 0);
+  CHECK(sv(fms::to_string(fms::CompareOp::GreaterEqual)) == sv(">="));
+  CHECK(sv(fms::to_string(fms::CompareOp::NotEqual)) == sv("!="));
 }

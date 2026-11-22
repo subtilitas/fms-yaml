@@ -5,8 +5,6 @@
 // nothing holds.
 #include <doctest/doctest.h>
 
-#include <cstring>
-
 #include "fms/port/memory_port.hpp"
 #include "fms/runtime.hpp"
 #include "fms/limits.hpp"
@@ -14,7 +12,7 @@
 
 namespace {
 
-fms::StringView sv(const char* text) { return fms::StringView(text, std::strlen(text)); }
+fms::StringView sv(const char* text) { return fms::StringView(text); }
 
 constexpr const char* kSetup = "fsm: {initial: self_test}\n";
 
@@ -76,40 +74,40 @@ struct Harness {
 /// this an assertion about the default message capacity rather than about what
 /// the runtime reports.
 bool reports(fms::StringView actual, const char* expected) {
-  const std::size_t full = std::strlen(expected);
-  const std::size_t want = (full < fms::limits::kMaxMessageLength)
-                               ? full
-                               : fms::limits::kMaxMessageLength;
-  return actual.size() == want && std::strncmp(actual.data(), expected, want) == 0;
+  const fms::StringView full = sv(expected);
+  const std::size_t      want = (full.size() < fms::limits::kMaxMessageLength)
+                                    ? full.size()
+                                    : fms::limits::kMaxMessageLength;
+  return actual == full.substr(0, want);
 }
 
 TEST_CASE("the first alternative whose guard holds is taken") {
   Harness h;
   h.deliver("self_test_passed", "errors=0");
-  CHECK(std::strcmp(h.machine.current_name(), "standing") == 0);
+  CHECK(sv(h.machine.current_name()) == sv("standing"));
 }
 
 TEST_CASE("an unguarded alternative is the fallback") {
   Harness h;
   h.deliver("self_test_passed", "errors=3");
-  CHECK(std::strcmp(h.machine.current_name(), "fault") == 0);
+  CHECK(sv(h.machine.current_name()) == sv("fault"));
 }
 
 TEST_CASE("a guard that needs an argument nobody sent takes the fallback") {
   Harness h;
   h.deliver("self_test_passed");  // no errors= at all
-  CHECK(std::strcmp(h.machine.current_name(), "fault") == 0);
+  CHECK(sv(h.machine.current_name()) == sv("fault"));
 }
 
 TEST_CASE("with no fallback, a failing guard is a rejection") {
   Harness h;
   h.deliver("self_test_passed", "errors=0");
-  REQUIRE(std::strcmp(h.machine.current_name(), "standing") == 0);
+  REQUIRE(sv(h.machine.current_name()) == sv("standing"));
   h.port.clear_history();
 
   h.deliver("throttle_pressed", "pedal=3");
 
-  CHECK(std::strcmp(h.machine.current_name(), "standing") == 0);
+  CHECK(sv(h.machine.current_name()) == sv("standing"));
   CHECK(h.machine.rejection_count() == 1);
   CHECK(h.port.states().empty());
   // The report says which guard failed and with what, which is the useful part.
@@ -117,7 +115,7 @@ TEST_CASE("with no fallback, a failing guard is a rejection") {
                 "rejected: throttle_pressed in state standing: no guard matched (pedal=3)"));
 
   h.deliver("throttle_pressed", "pedal=40");
-  CHECK(std::strcmp(h.machine.current_name(), "accelerating") == 0);
+  CHECK(sv(h.machine.current_name()) == sv("accelerating"));
 }
 
 TEST_CASE("a guard rejection is told apart from an unknown trigger") {
@@ -143,13 +141,13 @@ TEST_CASE("conditions listed together are ANDed") {
   h.deliver("self_test_passed", "errors=0");  // -> standing
 
   h.deliver("engine_fault", "severity=3 system=gearbox");  // second condition fails
-  CHECK(std::strcmp(h.machine.current_name(), "standing") == 0);
+  CHECK(sv(h.machine.current_name()) == sv("standing"));
 
   h.deliver("engine_fault", "severity=1 system=engine");   // first condition fails
-  CHECK(std::strcmp(h.machine.current_name(), "standing") == 0);
+  CHECK(sv(h.machine.current_name()) == sv("standing"));
 
   h.deliver("engine_fault", "severity=2 system=engine");   // both hold
-  CHECK(std::strcmp(h.machine.current_name(), "fault") == 0);
+  CHECK(sv(h.machine.current_name()) == sv("fault"));
 }
 
 TEST_CASE("the model answers what a state accepts and why") {
@@ -178,7 +176,7 @@ TEST_CASE("malformed arguments are reported and change nothing") {
   Harness h;
   h.deliver("self_test_passed", "errors");  // no '='
 
-  CHECK(std::strcmp(h.machine.current_name(), "self_test") == 0);
+  CHECK(sv(h.machine.current_name()) == sv("self_test"));
   CHECK(h.machine.transition_count() == 0);
   CHECK(h.port.last_error_message() ==
         sv("bad arguments for self_test_passed: malformed trigger arguments"));
@@ -187,7 +185,7 @@ TEST_CASE("malformed arguments are reported and change nothing") {
 TEST_CASE("application code can pass arguments too") {
   Harness h;
   CHECK(h.runtime.fire_by_name(sv("self_test_passed"), sv("errors=0")) == fms::Status::Ok);
-  CHECK(std::strcmp(h.machine.current_name(), "standing") == 0);
+  CHECK(sv(h.machine.current_name()) == sv("standing"));
 
   CHECK(h.runtime.fire_by_name(sv("throttle_pressed"), sv("pedal=2")) ==
         fms::Status::GuardRejected);
@@ -269,25 +267,25 @@ TEST_CASE("the shipped car machine uses guards as documented") {
   };
 
   deliver("ignition_on", "");
-  CHECK(std::strcmp(machine.current_name(), "self_test") == 0);
+  CHECK(sv(machine.current_name()) == sv("self_test"));
 
   deliver("self_test_passed", "errors=2");   // a failed self test parks the car
-  CHECK(std::strcmp(machine.current_name(), "fault") == 0);
+  CHECK(sv(machine.current_name()) == sv("fault"));
 
   deliver("ignition_off", "");
   deliver("ignition_on", "");
   deliver("self_test_passed", "errors=0");   // a clean one releases it
-  CHECK(std::strcmp(machine.current_name(), "standing") == 0);
+  CHECK(sv(machine.current_name()) == sv("standing"));
 
   deliver("throttle_pressed", "pedal=3");    // resting a foot on the pedal
-  CHECK(std::strcmp(machine.current_name(), "standing") == 0);
+  CHECK(sv(machine.current_name()) == sv("standing"));
 
   deliver("throttle_pressed", "pedal=60");
-  CHECK(std::strcmp(machine.current_name(), "accelerating") == 0);
+  CHECK(sv(machine.current_name()) == sv("accelerating"));
 
   deliver("engine_fault", "severity=1");     // a warning does not stop the car
-  CHECK(std::strcmp(machine.current_name(), "accelerating") == 0);
+  CHECK(sv(machine.current_name()) == sv("accelerating"));
 
   deliver("engine_fault", "severity=3");
-  CHECK(std::strcmp(machine.current_name(), "fault") == 0);
+  CHECK(sv(machine.current_name()) == sv("fault"));
 }

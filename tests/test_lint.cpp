@@ -7,10 +7,11 @@
 // would have.
 #include <doctest/doctest.h>
 
-#include <cstring>
 #include <string>
 
 #include <etl/array.h>
+#include <etl/string.h>
+#include <etl/to_string.h>
 
 #include "fms/inspect/lint.hpp"
 #include "fms/limits.hpp"
@@ -18,7 +19,7 @@
 
 namespace {
 
-fms::StringView sv(const char* text) { return fms::StringView(text, std::strlen(text)); }
+fms::StringView sv(const char* text) { return fms::StringView(text); }
 
 /// Loads a machine, insists it was valid, and lints it.  `initial` is a state
 /// name rather than an id so the cases below read like the files they are.
@@ -92,7 +93,7 @@ bool clipped(const fms::Message& message) {
 }
 
 bool contains(const fms::Message& haystack, const char* needle) {
-  return std::strstr(haystack.c_str(), needle) != nullptr;
+  return fms::view(haystack).find(sv(needle)) != fms::StringView::npos;
 }
 
 // ---------------------------------------------------------------------------
@@ -437,13 +438,11 @@ TEST_CASE("a full report says so rather than pretending it looked at everything"
   // hard to write in YAML and pointless to read.
   fms::Model model;
   for (std::size_t i = 0; i < fms::limits::kMaxStates; ++i) {
-    etl::array<char, 8> name{};
-    const int           written = std::snprintf(name.data(), name.size(), "s%zu", i);
-    REQUIRE(written > 0);
+    etl::string<8> name("s");
+    etl::to_string(i, name, true);
 
     fms::StateId id = fms::kNoState;
-    REQUIRE(model.declare_state(fms::StringView(name.data(), static_cast<std::size_t>(written)),
-                                id) == fms::Status::Ok);
+    REQUIRE(model.declare_state(fms::view(name), id) == fms::Status::Ok);
   }
   fms::TriggerId trigger = fms::kNoTrigger;
   REQUIRE(model.declare_trigger(sv("unused"), fms::StringView{}, trigger) == fms::Status::Ok);
@@ -473,8 +472,8 @@ TEST_CASE("a full report says so rather than pretending it looked at everything"
 
 TEST_CASE("every check has a slug and a severity") {
   for (const fms::lint::Check check : kAllChecks) {
-    CHECK(std::strlen(fms::lint::to_string(check)) > 0);
-    CHECK(std::strcmp(fms::lint::to_string(check), "unknown-check") != 0);
+    CHECK(!sv(fms::lint::to_string(check)).empty());
+    CHECK(sv(fms::lint::to_string(check)) != sv("unknown-check"));
   }
   // What keeps kAllChecks honest.  One past the end of the list has to be a
   // value no case names; the day someone adds an enumerator and a slug for it
@@ -483,19 +482,18 @@ TEST_CASE("every check has a slug and a severity") {
   // NOLINTNEXTLINE(clang-analyzer-optin.core.EnumCastOutOfRange)
   const auto past_the_end = static_cast<fms::lint::Check>(kAllChecks.size());
   INFO("kAllChecks lists ", kAllChecks.size(), " checks");
-  CHECK(std::strcmp(fms::lint::to_string(past_the_end), "unknown-check") == 0);
+  CHECK(sv(fms::lint::to_string(past_the_end)) == sv("unknown-check"));
 
   // Two checks sharing a slug would make a report ambiguous to anything reading
   // it by name, which is what a slug is for.
   for (std::size_t i = 0; i < kAllChecks.size(); ++i) {
     for (std::size_t j = i + 1; j < kAllChecks.size(); ++j) {
       INFO("checks ", i, " and ", j, " share a slug");
-      CHECK(std::strcmp(fms::lint::to_string(kAllChecks[i]),
-                        fms::lint::to_string(kAllChecks[j])) != 0);
+      CHECK(sv(fms::lint::to_string(kAllChecks[i])) != sv(fms::lint::to_string(kAllChecks[j])));
     }
   }
-  CHECK(std::strcmp(fms::lint::to_string(fms::lint::Severity::Error), "error") == 0);
-  CHECK(std::strcmp(fms::lint::to_string(fms::lint::Severity::Warning), "warning") == 0);
+  CHECK(sv(fms::lint::to_string(fms::lint::Severity::Error)) == sv("error"));
+  CHECK(sv(fms::lint::to_string(fms::lint::Severity::Warning)) == sv("warning"));
 }
 
 TEST_CASE("the shipped car machine is clean") {
@@ -543,15 +541,15 @@ states:
   REQUIRE(linted.count(fms::lint::Check::ImpossibleGuard) == 1);
   const fms::Message message = linted.text(fms::lint::Check::ImpossibleGuard);
 
-  CHECK(std::strstr(message.c_str(), "state 'idle'") != nullptr);
-  CHECK(std::strstr(message.c_str(), "trigger 'go'") != nullptr);
-  CHECK(std::strstr(message.c_str(), "alternative 1") != nullptr);
+  CHECK(contains(message, "state 'idle'"));
+  CHECK(contains(message, "trigger 'go'"));
+  CHECK(contains(message, "alternative 1"));
   if (!clipped(message)) {
-    CHECK(std::strstr(message.c_str(), "can never hold") != nullptr);
+    CHECK(contains(message, "can never hold"));
     // Both halves of the contradiction, joined - one alone would not explain it.
-    CHECK(std::strstr(message.c_str(), "pedal > 60") != nullptr);
-    CHECK(std::strstr(message.c_str(), "pedal < 5") != nullptr);
-    CHECK(std::strstr(message.c_str(), " and ") != nullptr);
+    CHECK(contains(message, "pedal > 60"));
+    CHECK(contains(message, "pedal < 5"));
+    CHECK(contains(message, " and "));
   }
 }
 
@@ -587,9 +585,9 @@ states:
   CHECK(finding->other == 1);
 
   const fms::Message message = linted.text(fms::lint::Check::ShadowedAlternative);
-  CHECK(std::strstr(message.c_str(), "alternative 2") != nullptr);
-  CHECK(std::strstr(message.c_str(), "alternative 1") != nullptr);
-  CHECK(std::strstr(message.c_str(), "holds whenever this one would") != nullptr);
+  CHECK(contains(message, "alternative 2"));
+  CHECK(contains(message, "alternative 1"));
+  CHECK(contains(message, "holds whenever this one would"));
 }
 
 TEST_CASE("a text guard that cannot hold is described with its words") {
@@ -611,8 +609,8 @@ states:
   REQUIRE(linted.count(fms::lint::Check::ImpossibleGuard) == 1);
   const fms::Message message = linted.text(fms::lint::Check::ImpossibleGuard);
   if (!clipped(message)) {
-    CHECK(std::strstr(message.c_str(), "mode == sport") != nullptr);
-    CHECK(std::strstr(message.c_str(), "mode != sport") != nullptr);
+    CHECK(contains(message, "mode == sport"));
+    CHECK(contains(message, "mode != sport"));
   }
 }
 

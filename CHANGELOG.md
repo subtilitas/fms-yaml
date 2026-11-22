@@ -6,6 +6,44 @@ numbers promise is in [docs/stability.md](docs/stability.md).
 
 ## Unreleased
 
+### Changed
+
+- **No C string, format or stdio calls.** `src/`, `include/`, `tests/` and
+  `examples/` call none of `strlen`, `strcmp`, `strncmp`, `strstr`, `snprintf`,
+  `vsnprintf`, `memset`, `printf`, `fprintf`, `fputs`, `puts`, `putchar` or
+  `fwrite`; 151 call sites are replaced. Static analysers such as CodeSonar
+  report every one of them. Strings are compared and searched as
+  `etl::string_view`, a C string is measured with the bounded `etl::strlen`
+  against a named capacity, numbers are formatted with `etl::to_string`, and
+  output goes through `std::cout` and `std::cerr`.
+
+- The loader builds a diagnostic with a non-variadic writer that appends each
+  piece to `Diagnostics::message`. No format string exists to disagree with its
+  arguments, so the printf format attribute and the `cert-dcl50-cpp`
+  suppression go with it. Every message text is byte-identical, clipped at
+  `FMS_MAX_MESSAGE_LENGTH`.
+
+- `ConsolePort` takes the line length from `std::cin.gcount()`. A NUL byte
+  inside a line is part of the text rather than its end.
+
+- The ETL error handler and the fatal allocation guard report on `std::cerr`,
+  which writes without allocating. On a target with no operating system both
+  reports are compiled out and the `abort()` stays: a Cortex-M4 probe image
+  that links `fms_core` against newlib has 16 KB of text without a report,
+  39 KB with `fprintf` and 295 KB with `std::cerr`.
+
+- The car example and the install consumer write through `<iostream>`. stdout
+  and stderr are byte-identical to the stdio output, and so is their order on a
+  shared pipe: the example unties `std::cerr` from `std::cout`.
+
+- clang-tidy runs `cppcoreguidelines-pro-type-vararg`. No variadic call is
+  left for it to report.
+
+### Added
+
+- `tests/test_no_alloc.cpp` counts the allocations of a `std::cerr` write of a
+  literal, a C string and an int with the guard armed. The count is 0.
+
 ### Added
 
 - A test that every `lint::Check` describes itself past the shared prefix.

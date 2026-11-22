@@ -4,15 +4,17 @@
 // buffer.
 #include <doctest/doctest.h>
 
-#include <cstdio>
-#include <cstring>
+#include <iterator>
 #include <string>
+
+#include <etl/algorithm.h>
+#include <etl/string.h>
 
 #include "fms/args.hpp"
 #include "fms/limits.hpp"
 
 namespace {
-fms::StringView sv(const char* text) { return fms::StringView(text, std::strlen(text)); }
+fms::StringView sv(const char* text) { return fms::StringView(text); }
 }  // namespace
 
 TEST_CASE("named values are parsed and read back") {
@@ -147,11 +149,11 @@ TEST_CASE("malformed arguments are reported, not guessed at") {
   CHECK(args.parse(sv(past_capacity.c_str())) == fms::Status::CapacityExceeded);
 
   char long_key[fms::limits::kMaxNameLength + 8];
-  std::memset(long_key, 'x', sizeof(long_key));
+  etl::fill(std::begin(long_key), std::end(long_key), 'x');
   long_key[sizeof(long_key) - 1] = '\0';
-  char text[128];
-  (void)std::snprintf(text, sizeof(text), "%s=1", long_key);
-  CHECK(args.parse(sv(text)) == fms::Status::NameTooLong);
+  etl::string<sizeof(long_key) + 2> text(long_key);
+  text += "=1";
+  CHECK(args.parse(fms::view(text)) == fms::Status::NameTooLong);
 
   CHECK(args.empty());  // a failed parse leaves nothing behind
 }
