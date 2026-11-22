@@ -187,9 +187,12 @@ assertion.
 ETL is configured consistently on both sides. `ETL_THROW_EXCEPTIONS` is never
 defined, so ETL never throws; `ETL_LOG_ERRORS` is a `PUBLIC` compile definition
 so `ETL_ASSERT` expands identically in every TU, which is an ODR requirement.
-`fms::install_etl_error_handler()` routes ETL's error reports to stderr and
-`abort()`; they fire only on programming errors such as overrunning a fixed
-container.
+`fms::install_etl_error_handler()` routes ETL's error reports to `std::cerr`
+and `abort()`; they fire only on programming errors such as overrunning a fixed
+container. `std::cerr` writes without allocating, so the report cannot recurse
+into the allocation guard. On a target with no operating system the report is
+compiled out and the `abort()` stays: `<iostream>` grows a Cortex-M4 probe image
+that links `fms_core` from 16 KB to 295 KB of text.
 
 ## The port seam
 
@@ -246,7 +249,8 @@ untouched. `ConsolePort` (`src/port/console_port.cpp`) is the worked example:
 
 `fms_alloc_guard` replaces global `operator new`/`delete`. `alloc_guard::arm()`
 makes any subsequent allocation a counted violation, and in fatal mode an
-`abort()` with a message on stderr.
+`abort()` with a message on `std::cerr` (compiled out on a target with no
+operating system, as above).
 
 `tests/test_no_alloc.cpp` loads a config, starts the runtime, arms the guard and
 runs 1500 service calls covering routing, accepted and rejected triggers,
@@ -426,9 +430,10 @@ drain it from the same loop — do not call `fire()` concurrently.
 
 ## Porting to a bare-metal target
 
-1. Keep `fms_core`; of the standard library it includes only `<cstdint>`,
-   `<cstddef>` and `<cstring>` itself. **It is not freestanding**: ETL 20.39.4's
-   `etl/limits.h` includes `<math.h>`, reached from `etl/string.h` through
+1. Keep `fms_core`; for a target with no operating system it includes only
+   `<cstdint>`, `<cstddef>` and `<cstdlib>` of the standard library itself. On a
+   host, `src/status.cpp` adds `<iostream>` for the ETL error report. **It is
+   not freestanding**: ETL 20.39.4's `etl/limits.h` includes `<math.h>`, reached from `etl/string.h` through
    `etl/binary.h`, and libstdc++ 13 refuses `<cmath>` when `__STDC_HOSTED__` is
    0. A target build therefore needs a hosted C++ library — newlib or
    newlib-nano is one, and is what a Cortex-M project uses anyway — rather than

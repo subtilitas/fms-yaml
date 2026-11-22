@@ -12,7 +12,6 @@
 // back, including when a REQUIRE throws out of the middle of a test.
 #include <doctest/doctest.h>
 
-#include <cstring>
 #include <iostream>
 #include <sstream>
 #include <string>
@@ -22,7 +21,7 @@
 
 namespace {
 
-fms::StringView sv(const char* text) { return fms::StringView(text, std::strlen(text)); }
+fms::StringView sv(const char* text) { return fms::StringView(text); }
 
 std::string text_of(fms::StringView view) { return std::string(view.data(), view.size()); }
 
@@ -255,6 +254,6 @@ TEST_CASE("close flushes, and a port that has not failed says so") {
   Streams              streams("");
   fms::port::ConsolePort port(/*prompt=*/false);
   REQUIRE(port.open() == fms::Status::Ok);
-  CHECK(std::strcmp(port.last_error(), "none") == 0);
+  CHECK(sv(port.last_error()) == sv("none"));
   CHECK(port.close() == fms::Status::Ok);
 }

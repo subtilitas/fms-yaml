@@ -7,7 +7,7 @@
 // state changes, rejections, unknown channels and publishing.
 #include <doctest/doctest.h>
 
-#include <cstring>
+#include <iostream>
 
 #include "fms/alloc_guard.hpp"
 #include "fms/port/memory_port.hpp"
@@ -16,7 +16,7 @@
 
 namespace {
 
-fms::StringView sv(const char* text) { return fms::StringView(text, std::strlen(text)); }
+fms::StringView sv(const char* text) { return fms::StringView(text); }
 
 constexpr const char* kSetup = R"(
 fsm:
@@ -96,7 +96,7 @@ TEST_CASE("the run phase does not touch the heap") {
   CHECK(g_machine.rejection_count() == 250);
   CHECK(g_runtime.inputs_received() == 1250);
   CHECK(g_runtime.inputs_unrouted() == 250);
-  CHECK(std::strcmp(g_machine.current_name(), "standing") == 0);
+  CHECK(sv(g_machine.current_name()) == sv("standing"));
 }
 
 TEST_CASE("the guard itself detects a heap allocation") {
@@ -108,4 +108,18 @@ TEST_CASE("the guard itself detects a heap allocation") {
   ::operator delete(p);
 
   CHECK(fms::alloc_guard::violations() == 1);
+}
+
+TEST_CASE("a report on std::cerr does not allocate") {
+  // The fatal guard and the ETL error handler both report on std::cerr from a
+  // path where an allocation would recurse into the guard.  This is the same
+  // kind of write: a literal, a C string and an int.
+  const char* const where = "test_no_alloc.cpp";
+  fms::alloc_guard::reset_counters();
+  fms::alloc_guard::arm(/*fatal=*/false);
+  std::cerr << "[fms] std::cerr allocation probe: " << where << ':' << __LINE__ << '\n';
+  fms::alloc_guard::disarm();
+
+  CHECK(fms::alloc_guard::total_allocations() == 0);
+  CHECK(fms::alloc_guard::violations() == 0);
 }

@@ -192,7 +192,7 @@ ctest --test-dir "${work}/fms-build" --output-on-failure
 # Reported, never asserted.  The sizes are read out of a program built against
 # the ETL under test rather than computed here.
 cat > "${work}/sizes.cpp" <<'CPP'
-#include <cstdio>
+#include <iostream>
 #include <etl/version.h>
 #include <etl/vector.h>
 #include <fms/args.hpp>
@@ -200,10 +200,10 @@ cat > "${work}/sizes.cpp" <<'CPP'
 #include <fms/runtime.hpp>
 #include <fms/setup.hpp>
 int main() {
-  std::printf("| %d.%d.%d | %zu | %zu | %zu | %zu | %zu |\n",
-              ETL_VERSION_MAJOR, ETL_VERSION_MINOR, ETL_VERSION_PATCH,
-              sizeof(etl::vector<int, 8>), sizeof(fms::Model),
-              sizeof(fms::Setup), sizeof(fms::Args), sizeof(fms::Runtime));
+  std::cout << "| " << ETL_VERSION_MAJOR << '.' << ETL_VERSION_MINOR << '.'
+            << ETL_VERSION_PATCH << " | " << sizeof(etl::vector<int, 8>) << " | "
+            << sizeof(fms::Model) << " | " << sizeof(fms::Setup) << " | "
+            << sizeof(fms::Args) << " | " << sizeof(fms::Runtime) << " |\n";
   return 0;
 }
 CPP

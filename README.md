@@ -343,7 +343,7 @@ fms::config::Diagnostics diag;
 
 if (!fms::is_ok(fms::config::load_setup_file("car.setup.yaml", setup, diag)) ||
     !fms::is_ok(fms::config::load_machine_file("car.machine.yaml", model, diag))) {
-  std::fprintf(stderr, "line %d: %s\n", diag.line, diag.message.c_str());
+  std::cerr << "line " << diag.line << ": " << diag.message.c_str() << '\n';
   return 1;
 }
 

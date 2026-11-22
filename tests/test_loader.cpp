@@ -5,13 +5,16 @@
 // a throw.  Setup-file cases live in test_setup.cpp.
 #include <doctest/doctest.h>
 
-#include <cstring>
+#include <iterator>
+
+#include <etl/algorithm.h>
+#include <etl/string.h>
 
 #include "fms/yaml_loader.hpp"
 
 namespace {
 
-fms::StringView sv(const char* text) { return fms::StringView(text, std::strlen(text)); }
+fms::StringView sv(const char* text) { return fms::StringView(text); }
 
 struct Loaded {
   fms::Model               model;
@@ -44,7 +47,7 @@ TEST_CASE("a valid machine produces a validated model") {
   INFO("diagnostic: ", fixture.diagnostics.message.c_str());
   REQUIRE(fixture.load(kMinimal) == fms::Status::Ok);
 
-  CHECK(std::strcmp(fixture.model.name().c_str(), "minimal") == 0);
+  CHECK(sv(fixture.model.name().c_str()) == sv("minimal"));
   CHECK(fixture.model.state_count() == 2);
   CHECK(fixture.model.trigger_count() == 2);
   CHECK(fixture.model.validate() == fms::Status::Ok);
@@ -170,14 +173,14 @@ states:
 
 TEST_CASE("oversized names are rejected rather than silently truncated") {
   Loaded fixture;
-  char   yaml[512];
   char   long_name[fms::limits::kMaxNameLength + 8];
-  std::memset(long_name, 'x', sizeof(long_name));
+  etl::fill(std::begin(long_name), std::end(long_name), 'x');
   long_name[sizeof(long_name) - 1] = '\0';
 
-  (void)std::snprintf(yaml, sizeof(yaml), "triggers: [{name: t}]\nstates: [{name: %s}]\n",
-                      long_name);
-  CHECK(fixture.load(yaml) == fms::Status::NameTooLong);
+  etl::string<512> yaml("triggers: [{name: t}]\nstates: [{name: ");
+  yaml += long_name;
+  yaml += "}]\n";
+  CHECK(fixture.load(yaml.c_str()) == fms::Status::NameTooLong);
 }
 
 TEST_CASE("a null argument is refused rather than dereferenced") {
@@ -274,7 +277,7 @@ TEST_CASE("an empty file is empty, not unreadable") {
 #if defined(__unix__) || defined(__APPLE__)
 #include <sys/stat.h>
 
-#include <cstdio>
+#include <cstdio>  // std::remove
 #include <fstream>
 #include <string>
 #include <thread>

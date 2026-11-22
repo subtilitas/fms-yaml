@@ -8,53 +8,56 @@
 #include "fms/yaml_loader.hpp"
 
 #include <cerrno>
-#include <cstdarg>
-#include <cstdio>
-#include <cstring>
+#include <cstring>  // strerror_r, strerror_s: no ETL equivalent
 
 #include <fstream>
 #include <string>
 
+#include <etl/char_traits.h>
+#include <etl/to_string.h>
 #include <yaml-cpp/yaml.h>
 
 namespace fms::config {
 namespace {
 
-// Formats into the fixed diagnostic buffer.
+// Builds a diagnostic in place.
 //
-// This used to take two optional `const char*` defaulted to "" and hand both to
-// snprintf regardless of what the format asked for.  That was safe - excess
-// arguments to snprintf are ignored - but nothing checked that a format with
-// two %s was ever given two arguments, and cppcheck was right to object
-// (wrongPrintfScanfArgNum).  Varargs plus the format attribute turn the
-// convention into something the compiler verifies at every call site.
-#if defined(__GNUC__) || defined(__clang__)
-#define FMS_PRINTF_LIKE(fmt_index, first_arg) \
-  __attribute__((format(printf, fmt_index, first_arg)))
-#else
-#define FMS_PRINTF_LIKE(fmt_index, first_arg)
-#endif
-
-FMS_PRINTF_LIKE(4, 5)
-// A parameter pack would need a formatting library to consume it, and the
-// point of this function is to build a diagnostic without allocating.  The
-// format attribute above gives back the type checking the ellipsis loses.
-// NOLINTNEXTLINE(cert-dcl50-cpp)
-void set_message(Diagnostics& diagnostics, Status status, int line, const char* fmt, ...) {
-  diagnostics.status = status;
-  diagnostics.line   = line;
-
-  char buffer[limits::kMaxMessageLength + 1];
-  std::va_list args;
-  va_start(args, fmt);
-  (void)std::vsnprintf(buffer, sizeof(buffer), fmt, args);
-  va_end(args);
-
-  std::size_t length = std::strlen(buffer);
-  if (length > diagnostics.message.max_size()) {
-    length = diagnostics.message.max_size();
+// The constructor records the status and the line and empties the message;
+// each << appends one piece and clips at FMS_MAX_MESSAGE_LENGTH.  Every piece
+// has a static type, so there is no format string to disagree with its
+// arguments, and nothing allocates: the text goes straight into the fixed
+// buffer the Diagnostics already owns.
+class MessageWriter {
+ public:
+  MessageWriter(Diagnostics& diagnostics, Status status, int line) noexcept
+      : message_(diagnostics.message) {
+    diagnostics.status = status;
+    diagnostics.line   = line;
+    message_.clear();
   }
-  diagnostics.message.assign(buffer, length);
+
+  MessageWriter& operator<<(StringView text) noexcept {
+    append_clipped(message_, text);
+    return *this;
+  }
+
+  MessageWriter& operator<<(const std::string& text) noexcept {
+    return *this << StringView(text.data(), text.size());
+  }
+
+  // A C string is read no further than the message can hold: whatever lies
+  // beyond FMS_MAX_MESSAGE_LENGTH would be clipped anyway, and the bound keeps
+  // the scan finite for text that came from outside, such as e.what().
+  MessageWriter& operator<<(const char* text) noexcept {
+    return *this << StringView(text, etl::strlen(text, limits::kMaxMessageLength));
+  }
+
+ private:
+  Message& message_;
+};
+
+MessageWriter set_message(Diagnostics& diagnostics, Status status, int line) noexcept {
+  return MessageWriter(diagnostics, status, line);
 }
 
 int line_of(const YAML::Node& node) {
@@ -82,8 +85,8 @@ bool reject_foreign_section(const YAML::Node& root, const char* key, const char*
   if (!node) {
     return false;
   }
-  set_message(diagnostics, Status::SchemaError, line_of(node),
-              "'%s' belongs in the %s file", key, belongs_in);
+  set_message(diagnostics, Status::SchemaError, line_of(node))
+      << "'" << key << "' belongs in the " << belongs_in << " file";
   return true;
 }
 
@@ -97,30 +100,30 @@ Status parse_io(const YAML::Node& root, Setup& setup, Diagnostics& diagnostics) 
     return Status::Ok;  // optional section
   }
   if (!node.IsMap()) {
-    set_message(diagnostics, Status::SchemaError, line_of(node), "'io' must be a mapping");
+    set_message(diagnostics, Status::SchemaError, line_of(node)) << "'io' must be a mapping";
     return Status::SchemaError;
   }
 
   IoConfig& io = setup.mutable_io();
 
   if (node["state_channel"] && !read_string(node["state_channel"], io.state_channel)) {
-    set_message(diagnostics, Status::ChannelTooLong, line_of(node["state_channel"]),
-                "io.state_channel is too long");
+    set_message(diagnostics, Status::ChannelTooLong, line_of(node["state_channel"]))
+        << "io.state_channel is too long";
     return Status::ChannelTooLong;
   }
   if (node["error_channel"] && !read_string(node["error_channel"], io.error_channel)) {
-    set_message(diagnostics, Status::ChannelTooLong, line_of(node["error_channel"]),
-                "io.error_channel is too long");
+    set_message(diagnostics, Status::ChannelTooLong, line_of(node["error_channel"]))
+        << "io.error_channel is too long";
     return Status::ChannelTooLong;
   }
   if (node["endpoint"] && !read_string(node["endpoint"], io.endpoint)) {
-    set_message(diagnostics, Status::ChannelTooLong, line_of(node["endpoint"]),
-                "io.endpoint is too long");
+    set_message(diagnostics, Status::ChannelTooLong, line_of(node["endpoint"]))
+        << "io.endpoint is too long";
     return Status::ChannelTooLong;
   }
   if (node["identity"] && !read_string(node["identity"], io.identity)) {
-    set_message(diagnostics, Status::NameTooLong, line_of(node["identity"]),
-                "io.identity is too long");
+    set_message(diagnostics, Status::NameTooLong, line_of(node["identity"]))
+        << "io.identity is too long";
     return Status::NameTooLong;
   }
   return Status::Ok;
@@ -128,8 +131,8 @@ Status parse_io(const YAML::Node& root, Setup& setup, Diagnostics& diagnostics) 
 
 Status parse_setup(const YAML::Node& root, Setup& setup, Diagnostics& diagnostics) {
   if (!root.IsMap()) {
-    set_message(diagnostics, Status::SchemaError, line_of(root),
-                "the document root must be a mapping");
+    set_message(diagnostics, Status::SchemaError, line_of(root))
+        << "the document root must be a mapping";
     return Status::SchemaError;
   }
   if (reject_foreign_section(root, "states", "machine", diagnostics) ||
@@ -139,15 +142,15 @@ Status parse_setup(const YAML::Node& root, Setup& setup, Diagnostics& diagnostic
 
   const YAML::Node fsm = root["fsm"];
   if (!fsm || !fsm.IsMap() || !fsm["initial"]) {
-    set_message(diagnostics, Status::SchemaError, line_of(fsm),
-                "'fsm' must be a mapping containing 'initial'");
+    set_message(diagnostics, Status::SchemaError, line_of(fsm))
+        << "'fsm' must be a mapping containing 'initial'";
     return Status::SchemaError;
   }
 
   if (fsm["name"]) {
     const std::string name = fsm["name"].as<std::string>();
     if (!is_ok(setup.set_name(as_view(name)))) {
-      set_message(diagnostics, Status::NameTooLong, line_of(fsm["name"]), "fsm.name is too long");
+      set_message(diagnostics, Status::NameTooLong, line_of(fsm["name"])) << "fsm.name is too long";
       return Status::NameTooLong;
     }
   }
@@ -155,8 +158,8 @@ Status parse_setup(const YAML::Node& root, Setup& setup, Diagnostics& diagnostic
   const std::string initial = fsm["initial"].as<std::string>();
   const Status      status  = setup.set_initial(as_view(initial));
   if (!is_ok(status)) {
-    set_message(diagnostics, status, line_of(fsm["initial"]), "fsm.initial: %s",
-                to_string(status));
+    set_message(diagnostics, status, line_of(fsm["initial"]))
+        << "fsm.initial: " << to_string(status);
     return status;
   }
 
@@ -170,15 +173,15 @@ Status parse_setup(const YAML::Node& root, Setup& setup, Diagnostics& diagnostic
 Status parse_triggers(const YAML::Node& root, Model& model, Diagnostics& diagnostics) {
   const YAML::Node node = root["triggers"];
   if (!node || !node.IsSequence() || node.size() == 0) {
-    set_message(diagnostics, Status::SchemaError, line_of(node),
-                "'triggers' must be a non-empty sequence");
+    set_message(diagnostics, Status::SchemaError, line_of(node))
+        << "'triggers' must be a non-empty sequence";
     return Status::SchemaError;
   }
 
   for (const YAML::Node& entry : node) {
     if (!entry.IsMap() || !entry["name"]) {
-      set_message(diagnostics, Status::SchemaError, line_of(entry),
-                  "each trigger needs a 'name'");
+      set_message(diagnostics, Status::SchemaError, line_of(entry))
+          << "each trigger needs a 'name'";
       return Status::SchemaError;
     }
 
@@ -191,8 +194,8 @@ Status parse_triggers(const YAML::Node& root, Model& model, Diagnostics& diagnos
     TriggerId    id     = kNoTrigger;
     const Status status = model.declare_trigger(as_view(name), as_view(channel), id);
     if (!is_ok(status)) {
-      set_message(diagnostics, status, line_of(entry), "trigger '%s': %s", name.c_str(),
-                  to_string(status));
+      set_message(diagnostics, status, line_of(entry))
+          << "trigger '" << name << "': " << to_string(status);
       return status;
     }
   }
@@ -204,7 +207,7 @@ Status parse_triggers(const YAML::Node& root, Model& model, Diagnostics& diagnos
 Status declare_states(const YAML::Node& node, Model& model, Diagnostics& diagnostics) {
   for (const YAML::Node& entry : node) {
     if (!entry.IsMap() || !entry["name"]) {
-      set_message(diagnostics, Status::SchemaError, line_of(entry), "each state needs a 'name'");
+      set_message(diagnostics, Status::SchemaError, line_of(entry)) << "each state needs a 'name'";
       return Status::SchemaError;
     }
     const std::string name = entry["name"].as<std::string>();
@@ -212,8 +215,8 @@ Status declare_states(const YAML::Node& node, Model& model, Diagnostics& diagnos
     StateId      id     = kNoState;
     const Status status = model.declare_state(as_view(name), id);
     if (!is_ok(status)) {
-      set_message(diagnostics, status, line_of(entry), "state '%s': %s", name.c_str(),
-                  to_string(status));
+      set_message(diagnostics, status, line_of(entry))
+          << "state '" << name << "': " << to_string(status);
       return status;
     }
   }
@@ -231,16 +234,16 @@ Status parse_when(const YAML::Node& node, const char* trigger_name, ConditionLis
   const auto read_one = [&](const YAML::Node& scalar) -> Status {
     const std::string text = scalar.as<std::string>();
     if (out.full()) {
-      set_message(diagnostics, Status::CapacityExceeded, line_of(scalar),
-                  "'%s': more than FMS_MAX_CONDITIONS_PER_GUARD conditions", trigger_name);
+      set_message(diagnostics, Status::CapacityExceeded, line_of(scalar))
+          << "'" << trigger_name << "': more than FMS_MAX_CONDITIONS_PER_GUARD conditions";
       return Status::CapacityExceeded;
     }
     Condition    condition;
     const Status status = parse_condition(as_view(text), condition);
     if (!is_ok(status)) {
-      set_message(diagnostics, status, line_of(scalar),
-                  "'%s': cannot read the guard '%s' - expected <arg> <op> <value>", trigger_name,
-                  text.c_str());
+      set_message(diagnostics, status, line_of(scalar))
+          << "'" << trigger_name << "': cannot read the guard '" << text
+          << "' - expected <arg> <op> <value>";
       return status;
     }
     out.push_back(condition);
@@ -255,8 +258,8 @@ Status parse_when(const YAML::Node& node, const char* trigger_name, ConditionLis
       }
     }
     if (out.empty()) {
-      set_message(diagnostics, Status::SchemaError, line_of(node), "'%s': empty 'when'",
-                  trigger_name);
+      set_message(diagnostics, Status::SchemaError, line_of(node))
+          << "'" << trigger_name << "': empty 'when'";
       return Status::SchemaError;
     }
     return Status::Ok;
@@ -268,16 +271,16 @@ Status parse_when(const YAML::Node& node, const char* trigger_name, ConditionLis
 Status parse_alternative(const YAML::Node& node, StateId from, TriggerId trigger,
                          const char* trigger_name, Model& model, Diagnostics& diagnostics) {
   if (!node.IsMap() || !node["target"]) {
-    set_message(diagnostics, Status::SchemaError, line_of(node),
-                "'%s': an alternative needs a 'target'", trigger_name);
+    set_message(diagnostics, Status::SchemaError, line_of(node))
+        << "'" << trigger_name << "': an alternative needs a 'target'";
     return Status::SchemaError;
   }
 
   const std::string target_name = node["target"].as<std::string>();
   const StateId     target      = model.find_state(as_view(target_name));
   if (target == kNoState) {
-    set_message(diagnostics, Status::UnknownState, line_of(node["target"]),
-                "target state '%s' does not exist", target_name.c_str());
+    set_message(diagnostics, Status::UnknownState, line_of(node["target"]))
+        << "target state '" << target_name << "' does not exist";
     return Status::UnknownState;
   }
 
@@ -289,8 +292,8 @@ Status parse_alternative(const YAML::Node& node, StateId from, TriggerId trigger
 
   const Status status = model.add_transition(from, trigger, target, conditions);
   if (!is_ok(status)) {
-    set_message(diagnostics, status, line_of(node), "transition on '%s': %s", trigger_name,
-                to_string(status));
+    set_message(diagnostics, status, line_of(node))
+        << "transition on '" << trigger_name << "': " << to_string(status);
   }
   return status;
 }
@@ -313,8 +316,8 @@ Status link_states(const YAML::Node& node, Model& model, Diagnostics& diagnostic
       continue;  // a state with no way out is allowed, if unusual
     }
     if (!transitions.IsMap()) {
-      set_message(diagnostics, Status::SchemaError, line_of(transitions),
-                  "'transitions' must be a mapping of trigger -> state or alternatives");
+      set_message(diagnostics, Status::SchemaError, line_of(transitions))
+          << "'transitions' must be a mapping of trigger -> state or alternatives";
       return Status::SchemaError;
     }
 
@@ -322,8 +325,8 @@ Status link_states(const YAML::Node& node, Model& model, Diagnostics& diagnostic
       const std::string trigger_name = pair.first.as<std::string>();
       const TriggerId   trigger      = model.find_trigger(as_view(trigger_name));
       if (trigger == kNoTrigger) {
-        set_message(diagnostics, Status::UnknownTrigger, line_of(pair.first),
-                    "trigger '%s' is not declared", trigger_name.c_str());
+        set_message(diagnostics, Status::UnknownTrigger, line_of(pair.first))
+            << "trigger '" << trigger_name << "' is not declared";
         return Status::UnknownTrigger;
       }
 
@@ -333,14 +336,14 @@ Status link_states(const YAML::Node& node, Model& model, Diagnostics& diagnostic
         const std::string target_name = outcome.as<std::string>();
         const StateId     target      = model.find_state(as_view(target_name));
         if (target == kNoState) {
-          set_message(diagnostics, Status::UnknownState, line_of(outcome),
-                      "target state '%s' does not exist", target_name.c_str());
+          set_message(diagnostics, Status::UnknownState, line_of(outcome))
+              << "target state '" << target_name << "' does not exist";
           return Status::UnknownState;
         }
         const Status status = model.add_transition(from, trigger, target);
         if (!is_ok(status)) {
-          set_message(diagnostics, status, line_of(pair.first), "transition on '%s': %s",
-                      trigger_name.c_str(), to_string(status));
+          set_message(diagnostics, status, line_of(pair.first))
+              << "transition on '" << trigger_name << "': " << to_string(status);
           return status;
         }
         continue;
@@ -357,8 +360,8 @@ Status link_states(const YAML::Node& node, Model& model, Diagnostics& diagnostic
 
       if (outcome.IsSequence()) {
         if (outcome.size() == 0) {
-          set_message(diagnostics, Status::SchemaError, line_of(outcome),
-                      "'%s': empty list of alternatives", trigger_name.c_str());
+          set_message(diagnostics, Status::SchemaError, line_of(outcome))
+              << "'" << trigger_name << "': empty list of alternatives";
           return Status::SchemaError;
         }
         for (const YAML::Node& alternative : outcome) {
@@ -371,9 +374,8 @@ Status link_states(const YAML::Node& node, Model& model, Diagnostics& diagnostic
         continue;
       }
 
-      set_message(diagnostics, Status::SchemaError, line_of(outcome),
-                  "'%s': expected a state name, one alternative, or a list of them",
-                  trigger_name.c_str());
+      set_message(diagnostics, Status::SchemaError, line_of(outcome))
+          << "'" << trigger_name << "': expected a state name, one alternative, or a list of them";
       return Status::SchemaError;
     }
   }
@@ -382,8 +384,8 @@ Status link_states(const YAML::Node& node, Model& model, Diagnostics& diagnostic
 
 Status parse_machine(const YAML::Node& root, Model& model, Diagnostics& diagnostics) {
   if (!root.IsMap()) {
-    set_message(diagnostics, Status::SchemaError, line_of(root),
-                "the document root must be a mapping");
+    set_message(diagnostics, Status::SchemaError, line_of(root))
+        << "the document root must be a mapping";
     return Status::SchemaError;
   }
   if (reject_foreign_section(root, "io", "setup", diagnostics)) {
@@ -393,14 +395,14 @@ Status parse_machine(const YAML::Node& root, Model& model, Diagnostics& diagnost
   // key in the machine file is a setup key in the wrong place.
   const YAML::Node fsm = root["fsm"];
   if (fsm && fsm.IsMap() && fsm["initial"]) {
-    set_message(diagnostics, Status::SchemaError, line_of(fsm["initial"]),
-                "'fsm.initial' belongs in the setup file");
+    set_message(diagnostics, Status::SchemaError, line_of(fsm["initial"]))
+        << "'fsm.initial' belongs in the setup file";
     return Status::SchemaError;
   }
   if (fsm && fsm.IsMap() && fsm["name"]) {
     const std::string name = fsm["name"].as<std::string>();
     if (!is_ok(model.set_name(as_view(name)))) {
-      set_message(diagnostics, Status::NameTooLong, line_of(fsm["name"]), "fsm.name is too long");
+      set_message(diagnostics, Status::NameTooLong, line_of(fsm["name"])) << "fsm.name is too long";
       return Status::NameTooLong;
     }
   }
@@ -412,8 +414,8 @@ Status parse_machine(const YAML::Node& root, Model& model, Diagnostics& diagnost
 
   const YAML::Node states = root["states"];
   if (!states || !states.IsSequence() || states.size() == 0) {
-    set_message(diagnostics, Status::SchemaError, line_of(states),
-                "'states' must be a non-empty sequence");
+    set_message(diagnostics, Status::SchemaError, line_of(states))
+        << "'states' must be a non-empty sequence";
     return Status::SchemaError;
   }
 
@@ -428,7 +430,7 @@ Status parse_machine(const YAML::Node& root, Model& model, Diagnostics& diagnost
 
   status = model.validate();
   if (!is_ok(status)) {
-    set_message(diagnostics, status, -1, "validation failed: %s", to_string(status));
+    set_message(diagnostics, status, -1) << "validation failed: " << to_string(status);
   }
   return status;
 }
@@ -437,28 +439,35 @@ Status parse_machine(const YAML::Node& root, Model& model, Diagnostics& diagnost
 // shared plumbing for the four entry points
 // ---------------------------------------------------------------------------
 
-/// errno as text, into storage the caller owns.
+/// errno as text.
 ///
 /// std::strerror hands back a pointer to a buffer shared across the process,
 /// which clang-tidy reports as concurrency-mt-unsafe and MSVC deprecates.  Every
 /// platform has a bounded variant and no two agree on its name or its
-/// signature, so it is spelled per platform.
-void describe_errno(int code, char* out, std::size_t size) {
+/// signature, so it is spelled per platform.  When the platform has no text for
+/// the code, the result is "errno <code>".
+using ErrnoText = etl::string<63>;
+
+void describe_errno(int code, ErrnoText& out) {
+  char buffer[ErrnoText::MAX_SIZE + 1] = {};
+  out.clear();
 #if defined(_MSC_VER)
-  if (strerror_s(out, size, code) != 0) {
-    (void)std::snprintf(out, size, "errno %d", code);
-  }
+  const bool        described = strerror_s(buffer, sizeof(buffer), code) == 0;
+  const char* const message   = buffer;
 #elif defined(__GLIBC__)
-  // The GNU form returns the message and may leave `out` untouched.
-  const char* message = strerror_r(code, out, size);
-  if (message != out) {
-    (void)std::snprintf(out, size, "%s", message);
-  }
+  // The GNU form returns the message and may leave `buffer` untouched.
+  const char* const message   = strerror_r(code, buffer, sizeof(buffer));
+  const bool        described = message != nullptr;
 #else
-  if (strerror_r(code, out, size) != 0) {
-    (void)std::snprintf(out, size, "errno %d", code);
-  }
+  const bool        described = strerror_r(code, buffer, sizeof(buffer)) == 0;
+  const char* const message   = buffer;
 #endif
+  if (described) {
+    append_clipped(out, StringView(message, etl::strlen(message, ErrnoText::MAX_SIZE)));
+    return;
+  }
+  append_clipped(out, StringView("errno "));
+  (void)etl::to_string(code, out, true);
 }
 
 /// Opens the configuration once, and answers whether it can be read.
@@ -484,18 +493,19 @@ void describe_errno(int code, char* out, std::size_t size) {
 bool open_config(const char* path, std::ifstream& file, Diagnostics& diagnostics) {
   file.open(path, std::ios::binary);
   if (!file.is_open()) {
-    set_message(diagnostics, Status::FileNotFound, -1, "cannot open '%s'", path);
+    set_message(diagnostics, Status::FileNotFound, -1) << "cannot open '" << path << "'";
     return false;
   }
 
   errno = 0;
   (void)file.peek();
   if (file.bad()) {
-    char why[64];
-    describe_errno(errno, why, sizeof(why));
+    ErrnoText why;
+    describe_errno(errno, why);
     // The reason comes first: a message is clipped to FMS_MAX_MESSAGE_LENGTH
     // from the right, and a long path would otherwise push it out entirely.
-    set_message(diagnostics, Status::FileNotReadable, -1, "cannot read: %s ('%s')", why, path);
+    set_message(diagnostics, Status::FileNotReadable, -1)
+        << "cannot read: " << view(why) << " ('" << path << "')";
     return false;
   }
 
@@ -522,15 +532,15 @@ Status guarded(Target& target, Diagnostics& diagnostics, Produce produce, Parse 
     }
     return status;
   } catch (const YAML::Exception& e) {
-    set_message(diagnostics, Status::ParseError, e.mark.line + 1, "%s", e.what());
+    set_message(diagnostics, Status::ParseError, e.mark.line + 1) << e.what();
     target.clear();
     return Status::ParseError;
   } catch (const std::exception& e) {
-    set_message(diagnostics, Status::ParseError, -1, "%s", e.what());
+    set_message(diagnostics, Status::ParseError, -1) << e.what();
     target.clear();
     return Status::ParseError;
   } catch (...) {
-    set_message(diagnostics, Status::ParseError, -1, "unknown error while reading YAML");
+    set_message(diagnostics, Status::ParseError, -1) << "unknown error while reading YAML";
     target.clear();
     return Status::ParseError;
   }
@@ -545,7 +555,7 @@ Status guarded(Target& target, Diagnostics& diagnostics, Produce produce, Parse 
 Status load_setup_string(const char* yaml, Setup& setup, Diagnostics& diagnostics) noexcept {
   if (yaml == nullptr) {
     diagnostics.reset();
-    set_message(diagnostics, Status::InvalidArgument, -1, "null YAML buffer");
+    set_message(diagnostics, Status::InvalidArgument, -1) << "null YAML buffer";
     return Status::InvalidArgument;
   }
   return guarded(setup, diagnostics, [yaml] { return YAML::Load(yaml); }, parse_setup);
@@ -554,7 +564,7 @@ Status load_setup_string(const char* yaml, Setup& setup, Diagnostics& diagnostic
 Status load_setup_file(const char* path, Setup& setup, Diagnostics& diagnostics) noexcept {
   diagnostics.reset();
   if (path == nullptr) {
-    set_message(diagnostics, Status::InvalidArgument, -1, "null path");
+    set_message(diagnostics, Status::InvalidArgument, -1) << "null path";
     return Status::InvalidArgument;
   }
   std::ifstream file;
@@ -568,7 +578,7 @@ Status load_setup_file(const char* path, Setup& setup, Diagnostics& diagnostics)
 Status load_machine_string(const char* yaml, Model& model, Diagnostics& diagnostics) noexcept {
   if (yaml == nullptr) {
     diagnostics.reset();
-    set_message(diagnostics, Status::InvalidArgument, -1, "null YAML buffer");
+    set_message(diagnostics, Status::InvalidArgument, -1) << "null YAML buffer";
     return Status::InvalidArgument;
   }
   return guarded(model, diagnostics, [yaml] { return YAML::Load(yaml); }, parse_machine);
@@ -577,7 +587,7 @@ Status load_machine_string(const char* yaml, Model& model, Diagnostics& diagnost
 Status load_machine_file(const char* path, Model& model, Diagnostics& diagnostics) noexcept {
   diagnostics.reset();
   if (path == nullptr) {
-    set_message(diagnostics, Status::InvalidArgument, -1, "null path");
+    set_message(diagnostics, Status::InvalidArgument, -1) << "null path";
     return Status::InvalidArgument;
   }
   std::ifstream file;

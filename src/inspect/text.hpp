@@ -9,16 +9,28 @@
 #ifndef FMS_INSPECT_TEXT_HPP
 #define FMS_INSPECT_TEXT_HPP
 
+#include <cstddef>
 #include <cstdint>
-#include <cstring>
+
+#include <etl/char_traits.h>
 
 #include "fms/condition.hpp"
 #include "fms/types.hpp"
 
 namespace fms::inspect {
 
+/// The longest C string cstr() reads.  Its callers pass literals, Status and
+/// operator texts, and the names a Model holds; none is longer than the
+/// largest of the three fixed string capacities.
+inline constexpr std::size_t kMaxCStringLength =
+    (limits::kMaxNameLength > limits::kMaxChannelLength)
+        ? ((limits::kMaxNameLength > limits::kMaxMessageLength) ? limits::kMaxNameLength
+                                                                : limits::kMaxMessageLength)
+        : ((limits::kMaxChannelLength > limits::kMaxMessageLength) ? limits::kMaxChannelLength
+                                                                   : limits::kMaxMessageLength);
+
 inline StringView cstr(const char* text) noexcept {
-  return StringView(text, std::strlen(text));
+  return StringView(text, etl::strlen(text, kMaxCStringLength));
 }
 
 /// Appends a decimal integer.  Digits are built backwards into a local buffer

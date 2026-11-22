@@ -2,18 +2,10 @@
 #include "fms/port/console_port.hpp"
 
 #include <cctype>
-#include <cstring>
 #include <iostream>
 #include <limits>
 
 namespace fms::port {
-namespace {
-
-bool equals(const char* text, std::size_t length, const char* literal) noexcept {
-  return length == std::strlen(literal) && std::strncmp(text, literal, length) == 0;
-}
-
-}  // namespace
 
 Status ConsolePort::open() noexcept {
   // Untie cin from cout so a prompt is flushed before the read blocks, and skip
@@ -62,7 +54,12 @@ Status ConsolePort::receive(Input& input, std::uint32_t /*timeout_ms*/) noexcept
       continue;
     }
 
-    length_ = std::strlen(buffer_);
+    // gcount() counts the newline getline consumed and did not store; a last
+    // line without one ends at end of input instead.
+    length_ = static_cast<std::size_t>(std::cin.gcount());
+    if (length_ > 0 && !std::cin.eof()) {
+      --length_;
+    }
 
     // Trim trailing whitespace and any CR left by a Windows line ending.
     while (length_ > 0 &&
@@ -85,10 +82,11 @@ Status ConsolePort::receive(Input& input, std::uint32_t /*timeout_ms*/) noexcept
     if (length == 0) {
       continue;  // blank line: ask again
     }
-    if (equals(text, length, "quit") || equals(text, length, "exit")) {
+    const StringView line(text, length);
+    if (line == StringView("quit") || line == StringView("exit")) {
       return Status::EndOfInput;
     }
-    if (equals(text, length, "help") || equals(text, length, "?")) {
+    if (line == StringView("help") || line == StringView("?")) {
       print_help();
       continue;
     }

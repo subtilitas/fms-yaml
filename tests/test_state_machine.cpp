@@ -4,14 +4,18 @@
 // anything else is Status::NoTransition and the state is untouched.
 #include <doctest/doctest.h>
 
-#include <cstring>
+#include <iterator>
 #include <string>
+
+#include <etl/algorithm.h>
+#include <etl/string.h>
+#include <etl/to_string.h>
 
 #include "fms/state_machine.hpp"
 
 namespace {
 
-fms::StringView sv(const char* text) { return fms::StringView(text, std::strlen(text)); }
+fms::StringView sv(const char* text) { return fms::StringView(text); }
 
 /// standing --throttle--> accelerating --brake--> braking --stopped--> standing
 struct Fixture {
@@ -55,7 +59,7 @@ TEST_CASE("start enters the initial state") {
   Fixture f;
   REQUIRE(f.machine.start() == fms::Status::Ok);
   CHECK(f.machine.current() == f.standing);
-  CHECK(std::strcmp(f.machine.current_name(), "standing") == 0);
+  CHECK(sv(f.machine.current_name()) == sv("standing"));
 }
 
 TEST_CASE("a matching trigger changes the state") {
@@ -152,7 +156,7 @@ TEST_CASE("names longer than the compile-time limit are rejected, never truncate
   fms::Model model;
 
   char long_name[fms::limits::kMaxNameLength + 8];
-  std::memset(long_name, 'x', sizeof(long_name));
+  etl::fill(std::begin(long_name), std::end(long_name), 'x');
   long_name[sizeof(long_name) - 1] = '\0';
 
   fms::StateId   state = fms::kNoState;
@@ -163,12 +167,12 @@ TEST_CASE("names longer than the compile-time limit are rejected, never truncate
 
 TEST_CASE("capacity is a compile-time ceiling, not a suggestion") {
   fms::Model model;
-  char       name[16];
 
   for (std::size_t i = 0; i < fms::limits::kMaxStates; ++i) {
-    (void)std::snprintf(name, sizeof(name), "s%zu", i);
+    etl::string<16> name("s");
+    etl::to_string(i, name, true);
     fms::StateId id = fms::kNoState;
-    REQUIRE(model.declare_state(sv(name), id) == fms::Status::Ok);
+    REQUIRE(model.declare_state(fms::view(name), id) == fms::Status::Ok);
   }
   fms::StateId overflow = fms::kNoState;
   CHECK(model.declare_state(sv("one_too_many"), overflow) == fms::Status::CapacityExceeded);
@@ -195,7 +199,7 @@ TEST_CASE("an unbound machine cannot be started") {
   CHECK(machine.model() == nullptr);
   CHECK(machine.setup() == nullptr);
   CHECK(machine.current() == fms::kNoState);
-  CHECK(std::strcmp(machine.current_name(), "<uninitialised>") == 0);
+  CHECK(sv(machine.current_name()) == sv("<uninitialised>"));
 }
 
 TEST_CASE("the fire overloads are the same decision with less to type") {
@@ -254,8 +258,8 @@ TEST_CASE("an id nothing was declared under resolves to nothing, not to garbage"
   CHECK(!fixture.model.has_state(no_such_state));
   CHECK(fixture.model.state(no_such_state) == nullptr);
   CHECK(fixture.model.trigger(no_such_trigger) == nullptr);
-  CHECK(std::strcmp(fixture.model.state_name(no_such_state), "<invalid>") == 0);
-  CHECK(std::strcmp(fixture.model.trigger_name(no_such_trigger), "<invalid>") == 0);
+  CHECK(sv(fixture.model.state_name(no_such_state)) == sv("<invalid>"));
+  CHECK(sv(fixture.model.trigger_name(no_such_trigger)) == sv("<invalid>"));
   CHECK(!fixture.model.accepts(no_such_state, fixture.throttle));
   CHECK(fixture.model.target_of(no_such_state, fixture.throttle) == fms::kNoState);
 }

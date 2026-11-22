@@ -4,7 +4,6 @@
 // initial state it names has to exist in the machine it is bound to.
 #include <doctest/doctest.h>
 
-#include <cstring>
 #include <string>
 
 #include "fms/state_machine.hpp"
@@ -12,7 +11,7 @@
 
 namespace {
 
-fms::StringView sv(const char* text) { return fms::StringView(text, std::strlen(text)); }
+fms::StringView sv(const char* text) { return fms::StringView(text); }
 
 constexpr const char* kSetup = R"(
 fsm:
@@ -55,18 +54,18 @@ struct Pair {
 TEST_CASE("the setup file carries the deployment, not the behaviour") {
   Pair p;
 
-  CHECK(std::strcmp(p.setup.name().c_str(), "bench-01") == 0);
-  CHECK(std::strcmp(p.setup.initial_name().c_str(), "standing") == 0);
-  CHECK(std::strcmp(p.setup.io().state_channel.c_str(), "car/state") == 0);
-  CHECK(std::strcmp(p.setup.io().error_channel.c_str(), "car/error") == 0);
-  CHECK(std::strcmp(p.setup.io().endpoint.c_str(), "tcp://localhost:1883") == 0);
-  CHECK(std::strcmp(p.setup.io().identity.c_str(), "car-ecu-01") == 0);
+  CHECK(sv(p.setup.name().c_str()) == sv("bench-01"));
+  CHECK(sv(p.setup.initial_name().c_str()) == sv("standing"));
+  CHECK(sv(p.setup.io().state_channel.c_str()) == sv("car/state"));
+  CHECK(sv(p.setup.io().error_channel.c_str()) == sv("car/error"));
+  CHECK(sv(p.setup.io().endpoint.c_str()) == sv("tcp://localhost:1883"));
+  CHECK(sv(p.setup.io().identity.c_str()) == sv("car-ecu-01"));
 }
 
 TEST_CASE("the machine file carries the behaviour, not the deployment") {
   Pair p;
 
-  CHECK(std::strcmp(p.model.name().c_str(), "car") == 0);
+  CHECK(sv(p.model.name().c_str()) == sv("car"));
   CHECK(p.model.state_count() == 2);
   CHECK(p.model.trigger_count() == 2);
   CHECK(p.model.validate() == fms::Status::Ok);  // valid without any setup
@@ -78,7 +77,7 @@ TEST_CASE("binding resolves the initial state") {
 
   CHECK(p.machine.initial() == p.model.find_state(sv("standing")));
   REQUIRE(p.machine.start() == fms::Status::Ok);
-  CHECK(std::strcmp(p.machine.current_name(), "standing") == 0);
+  CHECK(sv(p.machine.current_name()) == sv("standing"));
 }
 
 TEST_CASE("one machine can be started in different states by swapping setups") {
@@ -92,7 +91,7 @@ TEST_CASE("one machine can be started in different states by swapping setups") {
                                          diagnostics) == fms::Status::Ok);
   REQUIRE(machine_a.init(model, bench) == fms::Status::Ok);
   REQUIRE(machine_a.start() == fms::Status::Ok);
-  CHECK(std::strcmp(machine_a.current_name(), "driving") == 0);
+  CHECK(sv(machine_a.current_name()) == sv("driving"));
 
   fms::Setup        car;
   fms::StateMachine machine_b;
@@ -100,7 +99,7 @@ TEST_CASE("one machine can be started in different states by swapping setups") {
                                          diagnostics) == fms::Status::Ok);
   REQUIRE(machine_b.init(model, car) == fms::Status::Ok);
   REQUIRE(machine_b.start() == fms::Status::Ok);
-  CHECK(std::strcmp(machine_b.current_name(), "standing") == 0);
+  CHECK(sv(machine_b.current_name()) == sv("standing"));
 }
 
 TEST_CASE("a setup naming a state the machine does not have is caught at init") {

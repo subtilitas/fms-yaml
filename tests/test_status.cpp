@@ -12,12 +12,13 @@
 // describe itself.
 #include <doctest/doctest.h>
 
-#include <cstring>
-
 #include "fms/condition.hpp"
 #include "fms/status.hpp"
+#include "fms/types.hpp"
 
 namespace {
+
+fms::StringView sv(const char* text) { return fms::StringView(text); }
 
 // Every enumerator of fms::Status, in declaration order.  Kept explicit rather
 // than derived from a range: the point is that a new one has to be added here
@@ -57,16 +58,16 @@ TEST_CASE("every Status describes itself, and no two describe themselves alike")
   for (const fms::Status status : kAllStatuses) {
     const char* text = fms::to_string(status);
     REQUIRE(text != nullptr);
-    CHECK(std::strlen(text) > 0);
+    CHECK(!sv(text).empty());
     // The default arm.  Reaching it here means an enumerator has no case.
-    CHECK(std::strcmp(text, "unknown status") != 0);
+    CHECK(sv(text) != sv("unknown status"));
   }
 
   constexpr std::size_t count = sizeof(kAllStatuses) / sizeof(kAllStatuses[0]);
   for (std::size_t i = 0; i < count; ++i) {
     for (std::size_t j = i + 1; j < count; ++j) {
       INFO("statuses ", i, " and ", j, " share a description");
-      CHECK(std::strcmp(fms::to_string(kAllStatuses[i]), fms::to_string(kAllStatuses[j])) != 0);
+      CHECK(sv(fms::to_string(kAllStatuses[i])) != sv(fms::to_string(kAllStatuses[j])));
     }
   }
 }
@@ -80,7 +81,7 @@ TEST_CASE("a Status from nowhere still returns a string rather than falling off 
   // NOLINTNEXTLINE(clang-analyzer-optin.core.EnumCastOutOfRange)
   const char* text = fms::to_string(static_cast<fms::Status>(200));
   REQUIRE(text != nullptr);
-  CHECK(std::strcmp(text, "unknown status") == 0);
+  CHECK(sv(text) == sv("unknown status"));
 }
 
 TEST_CASE("is_ok is true for exactly one status") {
@@ -95,17 +96,17 @@ TEST_CASE("is_ok is true for exactly one status") {
 }
 
 TEST_CASE("every comparison operator prints as it is written in a guard") {
-  CHECK(std::strcmp(fms::to_string(fms::CompareOp::Equal), "==") == 0);
-  CHECK(std::strcmp(fms::to_string(fms::CompareOp::NotEqual), "!=") == 0);
-  CHECK(std::strcmp(fms::to_string(fms::CompareOp::Less), "<") == 0);
-  CHECK(std::strcmp(fms::to_string(fms::CompareOp::LessEqual), "<=") == 0);
-  CHECK(std::strcmp(fms::to_string(fms::CompareOp::Greater), ">") == 0);
-  CHECK(std::strcmp(fms::to_string(fms::CompareOp::GreaterEqual), ">=") == 0);
+  CHECK(sv(fms::to_string(fms::CompareOp::Equal)) == sv("=="));
+  CHECK(sv(fms::to_string(fms::CompareOp::NotEqual)) == sv("!="));
+  CHECK(sv(fms::to_string(fms::CompareOp::Less)) == sv("<"));
+  CHECK(sv(fms::to_string(fms::CompareOp::LessEqual)) == sv("<="));
+  CHECK(sv(fms::to_string(fms::CompareOp::Greater)) == sv(">"));
+  CHECK(sv(fms::to_string(fms::CompareOp::GreaterEqual)) == sv(">="));
 
   for (const fms::CompareOp op : kAllOps) {
-    CHECK(std::strcmp(fms::to_string(op), "?") != 0);
+    CHECK(sv(fms::to_string(op)) != sv("?"));
   }
   // Same reasoning as the Status case above: the default arm has no other route.
   // NOLINTNEXTLINE(clang-analyzer-optin.core.EnumCastOutOfRange)
-  CHECK(std::strcmp(fms::to_string(static_cast<fms::CompareOp>(99)), "?") == 0);
+  CHECK(sv(fms::to_string(static_cast<fms::CompareOp>(99))) == sv("?"));
 }
